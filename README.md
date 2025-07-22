@@ -90,7 +90,7 @@ If confirmed, it restores:
 
 ---
 
-## 🧪 Example
+##  Example
 
 A sample generated `.conf` for a peer:
 
