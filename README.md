@@ -36,13 +36,13 @@ It guides you through generating keys, applying network and firewall settings, a
 
 1. **Download the script**:
    ```sh
-   curl -O https://raw.githubusercontent.com/Coralesoft/openwrt-wireguard-installer/main/interactive-wg-setup.sh
-   chmod +x interactive-wg-setup.sh
+   curl -O https://raw.githubusercontent.com/Coralesoft/openwrt-wireguard-installer/main/wg-openwrt-installer.sh
+   chmod +x wg-openwrt-installer.sh
    ```
 
 2. **Run it ** on your OpenWrt router:
    ```sh
-   ./interactive-wg-setup.sh
+   ./wg-openwrt-installer.sh
    ```
 
 ---
