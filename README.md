@@ -120,14 +120,6 @@ Import this into the **WireGuard app** on iOS/Android, or use with `wg-quick` on
 
 ---
 
-## 🛡 License
-
-MIT License © 2025 C. Brown  
-Feel free to use, modify, and share.
-
----
-
-
 ## 🧹 Uninstall
 
 To remove all WireGuard configuration, keys, peers, and firewall rules, use the included uninstall script.
