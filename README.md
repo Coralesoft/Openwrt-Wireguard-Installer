@@ -4,6 +4,7 @@ An interactive shell script to quickly and safely configure a WireGuard VPN serv
 
 It guides you through generating keys, applying network and firewall settings, and creating ready-to-import `.conf` files for client devices — with optional QR code output for mobile use and built-in rollback for peace of mind.
 
+v2025.7.1
 ---
 
 ## ✨ Features
