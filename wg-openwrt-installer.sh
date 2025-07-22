@@ -13,12 +13,6 @@ print_prompt() { printf "\033[0;33m%s\033[0m"   "$1"; }
 LOGFILE="/tmp/wg-setup.log"
 exec > >(tee -a "$LOGFILE") 2>&1
 
-# Must be root
-if [ "$(id -u)" != "0" ]; then
-  print_error "Please run as root."
-  exit 1
-fi
-
 # Ensure required commands
 for cmd in wg uci; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
