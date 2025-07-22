@@ -1,4 +1,4 @@
-# OpenWrt WireGuard Interactive Installer
+# OpenWrt WireGuard Ineractive Installer
 
 An interactive shell script to quickly and safely configure a WireGuard VPN server on an OpenWrt router.
 
@@ -36,13 +36,13 @@ It guides you through generating keys, applying network and firewall settings, a
 
 1. **Download the script**:
    ```sh
-   curl -O https://raw.githubusercontent.com/Coralesoft/openwrt-wireguard-installer/main/wg-openwrt-installer.sh
-   chmod +x wg-openwrt-installer.sh
+   curl -O https://raw.githubusercontent.com/Coralesoft/openwrt-wireguard-installer/main/interactive-wg-setup.sh
+   chmod +x interactive-wg-setup.sh
    ```
 
 2. **Run it as root** on your OpenWrt router:
    ```sh
-   ./wg-openwrt-installer.sh
+   ./interactive-wg-setup.sh
    ```
 
 ---
@@ -131,3 +131,22 @@ Feel free to use, modify, and share.
 
 Pull requests, issues, and suggestions are welcome.  
 Open an issue at [github.com/Coralesoft/openwrt-wireguard-installer/issues](https://github.com/Coralesoft/openwrt-wireguard-installer/issues).
+---
+
+## 🧹 Uninstall
+
+To remove all WireGuard configuration, keys, peers, and firewall rules, use the included uninstall script.
+
+### Usage
+
+Run normally to uninstall:
+
+```sh
+./wg-uninstall.sh
+```
+
+Run in dry-run mode to preview what will be removed:
+
+```sh
+./wg-uninstall.sh --dry-run
+```
