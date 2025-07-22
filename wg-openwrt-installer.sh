@@ -1,5 +1,5 @@
 #!/bin/sh
-# interactive-wg-setup.sh — OpenWrt WireGuard installer (conf + QR + rollback support)
+# wg-openwrt-installer.sh — OpenWrt WireGuard installer (conf + QR + rollback support)
 
 set -e
 trap 'print_error "Error on line $LINENO"; exit 1' ERR
