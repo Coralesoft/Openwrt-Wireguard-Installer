@@ -108,7 +108,7 @@ AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 ```
 
-Import this into the **WireGuard app** on iOS/Android, or use with `wg-quick` on desktop.
+Import this into the WireGuard app on iOS/Android, or use with `wg-quick` on desktop.
 
 ---
 
