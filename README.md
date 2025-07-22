@@ -143,4 +143,4 @@ Run in dry-run mode to preview what will be removed:
 ## 💬 Feedback
 
 Pull requests, issues, and suggestions are welcome.  
-Open an issue at [github.com/Coralesoft/openwrt-wireguard-installer/issues](https://github.com/Coralesoft/openwrt-wireguard-installer/issues).
+Open an issue at [github.com/Coralesoft/Openwrt-Wireguard-Installer/issues](https://github.com/Coralesoft/Openwrt-Wireguard-Installer/issues).
