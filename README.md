@@ -113,7 +113,7 @@ Import this into the **WireGuard app** on iOS/Android, or use with `wg-quick` on
 
 ## 📌 Roadmap
 
-- [ ] Add uninstall/teardown script
+- [ ] Add uninstall/teardown script - in progress 
 - [ ] Regenerate or revoke peer keys
 - [ ] Add script to regenerate peer QR codes
 
