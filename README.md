@@ -1,4 +1,4 @@
-# OpenWrt WireGuard Installer
+# OpenWrt WireGuard Interactive Installer
 
 An interactive shell script to quickly and safely configure a WireGuard VPN server on an OpenWrt router.
 
