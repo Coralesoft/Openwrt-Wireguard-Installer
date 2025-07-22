@@ -127,11 +127,6 @@ Feel free to use, modify, and share.
 
 ---
 
-## 💬 Feedback
-
-Pull requests, issues, and suggestions are welcome.  
-Open an issue at [github.com/Coralesoft/openwrt-wireguard-installer/issues](https://github.com/Coralesoft/openwrt-wireguard-installer/issues).
----
 
 ## 🧹 Uninstall
 
@@ -150,3 +145,9 @@ Run in dry-run mode to preview what will be removed:
 ```sh
 ./wg-uninstall.sh --dry-run
 ```
+---
+
+## 💬 Feedback
+
+Pull requests, issues, and suggestions are welcome.  
+Open an issue at [github.com/Coralesoft/openwrt-wireguard-installer/issues](https://github.com/Coralesoft/openwrt-wireguard-installer/issues).
