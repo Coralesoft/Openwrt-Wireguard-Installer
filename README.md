@@ -40,7 +40,7 @@ It guides you through generating keys, applying network and firewall settings, a
    chmod +x interactive-wg-setup.sh
    ```
 
-2. **Run it as root** on your OpenWrt router:
+2. **Run it ** on your OpenWrt router:
    ```sh
    ./interactive-wg-setup.sh
    ```
