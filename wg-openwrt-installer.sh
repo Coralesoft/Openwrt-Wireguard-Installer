@@ -1,5 +1,16 @@
 #!/bin/sh
 # wg-openwrt-installer.sh — OpenWrt WireGuard installer (conf + QR + rollback support)
+#
+# Description:
+#   Automates the interactive setup of a WireGuard VPN server on OpenWrt.
+#   Generates server and peer keys, applies UCI network and firewall config,
+#   outputs peer .conf files with optional QR codes, and supports rollback.
+#
+# Copyright (C) 2025 C. Brown <dev@coralesoft.nz>
+# License: MIT
+# Last revised: 2025-07-23
+# Version: 2025.7.1
+
 
 set -e
 trap 'print_error "Error on line $LINENO"; exit 1' ERR
