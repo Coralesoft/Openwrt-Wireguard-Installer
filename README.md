@@ -8,12 +8,12 @@ It guides you through generating keys, applying network and firewall settings, a
 
 ## ✨ Features
 
-- ✅ Interactive prompts for all setup variables
-- ✅ Generates secure keypairs and `.conf` files for each peer
-- ✅ Optional QR code output for mobile devices
-- ✅ Automatically applies UCI network and firewall rules
-- ✅ Creates timestamped backups and supports rollback
-- ✅ Built specifically for OpenWrt (no external scripts or hacks)
+-  Interactive prompts for all setup variables
+-  Generates secure keypairs and `.conf` files for each peer
+-  Optional QR code output for mobile devices
+-  Automatically applies UCI network and firewall rules
+-  Creates timestamped backups and supports rollback
+-  Built specifically for OpenWrt (no external scripts or hacks)
 
 ---
 
