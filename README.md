@@ -144,3 +144,12 @@ Run in dry-run mode to preview what will be removed:
 
 Pull requests, issues, and suggestions are welcome.  
 Open an issue at [github.com/Coralesoft/Openwrt-Wireguard-Installer/issues](https://github.com/Coralesoft/Openwrt-Wireguard-Installer/issues).
+
+
+## Support the Project
+If this project helps you streamline your OpenWrt setup and you’d like to support ongoing development, consider buying me a coffee. Your contribution keeps the creativity flowing and helps sustain future updates.
+
+<a href="https://www.buymeacoffee.com/r6zt79njh5m" target="_blank">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height:60px;width:217px;" />
+</a>
+
