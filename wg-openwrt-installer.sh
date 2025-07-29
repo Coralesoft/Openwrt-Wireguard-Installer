@@ -8,6 +8,13 @@
 #
 # Version: 2025.7.3 (fixed uci batch redirection)
 # Version: 2025.7.4 (fixes empty PublicKey bug, clean QR, stricter validation)
+# Version: 2025.7.5 (robustness updates and logic fixes)  
+#  - Validates CIDR format
+#  - Ensures Endpoint includes port
+#  - Cleans old UCI peer sections
+#  - Adds PNG support detection
+#  - Validates peer IP subnet
+#  - Prints summary at the end
 
 set -e
 trap 'print_error "Error on line $LINENO"; exit 1' ERR
@@ -27,7 +34,14 @@ for cmd in wg uci; do
 done
 
 HAS_QR=0
-command -v qrencode >/dev/null 2>&1 && HAS_QR=1
+HAS_PNG=0
+if command -v qrencode >/dev/null 2>&1; then
+  HAS_QR=1
+  # Test PNG support
+  if ! qrencode -t png -o /dev/null <<<"[Interface]" 2>&1 | grep -q "disabled at compile time"; then
+    HAS_PNG=1
+  fi
+fi
 
 ask_var() {
   name=$1; prompt=$2; what=$3; why=$4; default=$5
@@ -52,6 +66,19 @@ ask_var WAN_ZONE "WAN zone name" "WAN firewall zone in OpenWrt" "Allows peer con
 DEFAULT_DNS="$(printf '%s\n' "$WG_ADDR" | cut -d/ -f1)"
 ask_var WG_DNS  "DNS server for peers" "DNS IP to suggest to peers" "Avoids DNS leaks / enables local names" "$DEFAULT_DNS"
 ask_var NUM_PEERS "Number of peers to add" "How many devices will connect" "Each gets its own config & keypair" "0"
+
+# --- Validation ---
+# Endpoint must have a port
+case "$ENDPOINT" in
+  *:*) ;;  # already has port
+  *) ENDPOINT="$ENDPOINT:$WG_PORT";;
+esac
+
+# Validate CIDR format
+if ! echo "$WG_ADDR" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$'; then
+  print_error "Invalid Server VPN address. Must be in CIDR format, e.g., 192.168.20.1/24"
+  exit 1
+fi
 
 if ! printf '%s' "$NUM_PEERS" | grep -qE '^[0-9]+$'; then
   print_error "Invalid number of peers: $NUM_PEERS"
@@ -96,6 +123,11 @@ mkdir -p "$PEERDIR"
 
 WG_SUBNET_BASE="$(echo "$WG_ADDR" | cut -d/ -f1 | awk -F. '{print $1"."$2"."$3}')"
 
+# Clean any existing peer sections for this interface
+for sec in $(uci show network 2>/dev/null | grep "=wireguard_${WG_IFACE}" | cut -d. -f2); do
+    uci delete network.$sec
+done
+
 PEERS=""
 count=0
 while [ "$count" -lt "$NUM_PEERS" ]; do
@@ -113,10 +145,17 @@ while [ "$count" -lt "$NUM_PEERS" ]; do
   read -r PIP
   PIP="${PIP:-$DEFAULT_PIP}"
 
+  # Must be /32
   case "$PIP" in
     */32) ;;
     *) print_error "Must include /32 suffix; try again."; continue ;;
   esac
+
+  # Validate same subnet
+  if ! echo "$PIP" | grep -q "^$WG_SUBNET_BASE\."; then
+    print_error "Peer IP $PIP is not in subnet $WG_SUBNET_BASE. Skipping."
+    continue
+  fi
 
   umask 077
   PPRIV=$(wg genkey)
@@ -125,7 +164,6 @@ while [ "$count" -lt "$NUM_PEERS" ]; do
   printf '%s' "$PPRIV" > "$PEERDIR/$PNAME-privatekey"
   printf '%s' "$PPUB" > "$PEERDIR/$PNAME-publickey"
 
-  # Write peer config with no leading blank lines
   cat > "$PEERDIR/$PNAME.conf" <<EOF
 [Interface]
 PrivateKey = $PPRIV
@@ -142,8 +180,12 @@ EOF
 
   if [ "$HAS_QR" -eq 1 ]; then
     qrencode -t ansiutf8 < "$PEERDIR/$PNAME.conf"
-    qrencode -t png -o "$PEERDIR/$PNAME.png" < "$PEERDIR/$PNAME.conf"
-    print_info "  → Also saved PNG QR: $PEERDIR/$PNAME.png"
+    if [ "$HAS_PNG" -eq 1 ]; then
+      qrencode -t png -o "$PEERDIR/$PNAME.png" < "$PEERDIR/$PNAME.conf"
+      print_info "  → Also saved PNG QR: $PEERDIR/$PNAME.png"
+    else
+      print_info "  (PNG QR not supported by your qrencode build)"
+    fi
   else
     print_info "  (qrencode not installed, skipping QR code)"
   fi
@@ -212,7 +254,15 @@ uci commit firewall
 print_info ""
 print_info "WireGuard '$WG_IFACE' setup complete."
 print_info "→ Peer configs saved in: $PEERDIR/"
-[ "$HAS_QR" -eq 1 ] && print_info "→ QR codes shown above (and PNG files saved)."
+[ "$HAS_QR" -eq 1 ] && print_info "→ QR codes shown above (and PNG files saved if supported)."
+
+# Final summary
+print_info ""
+print_info "Summary:"
+print_info "  Server VPN: $WG_ADDR"
+print_info "  Endpoint: $ENDPOINT"
+print_info "  Port: $WG_PORT"
+print_info "  Peers generated: $NUM_PEERS"
 
 print_info ""
 print_prompt "Do you want to rollback to previous network/firewall config? [y/N]: "
@@ -225,4 +275,3 @@ if [ "$rollback" = "y" ] || [ "$rollback" = "Y" ]; then
   /etc/init.d/firewall restart
   print_info "Rollback complete. Reverted to previous config."
 fi
-
