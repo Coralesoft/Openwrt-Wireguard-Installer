@@ -9,19 +9,13 @@
 # Version: 2025.7.3 (fixed uci batch redirection)
 # Version: 2025.7.4 (fixes empty PublicKey bug, clean QR, stricter validation)
 # Version: 2025.7.5 (robustness updates and logic fixes)  
-#  - Validates CIDR format
+#  - Auto‑append /24 mask to WG_ADDR if missing
+#  - Basic IPv4/CIDR validation
 #  - Ensures Endpoint includes port
 #  - Cleans old UCI peer sections
 #  - Adds PNG support detection
 #  - Validates peer IP subnet
 #  - Prints summary at the end
-
-#!/bin/sh
-# wg-openwrt-installer.sh — OpenWrt WireGuard installer (conf + QR + rollback support)
-#
-# Version: 2025.7.5 (BusyBox fixes)
-#  • No in‑script exec logging (restores interactivity)
-#  • POSIX‑safe PNG support detection (no <<<)
 
 set -e
 trap 'print_error "Error on line $LINENO"; exit 1' ERR
@@ -43,7 +37,7 @@ HAS_QR=0
 HAS_PNG=0
 if command -v qrencode >/dev/null 2>&1; then
   HAS_QR=1
-  # Test PNG: feed "[Interface]" via printf
+  # Test PNG support
   if printf "[Interface]" | qrencode -t png -o /dev/null 2>&1 | grep -qv "disabled at compile time"; then
     HAS_PNG=1
   fi
@@ -63,34 +57,44 @@ ask_var() {
 print_info "Welcome to the WireGuard auto‑setup for OpenWrt!"
 
 # Collect inputs
-ask_var WG_IFACE  "WireGuard interface name" "VPN interface name in UCI"           "Used in network & firewall configs" "wg0"
-ask_var WG_PORT   "UDP listen port"            "Port WireGuard listens on"           "Must be open/forwarded"              "51820"
-ask_var WG_ADDR   "Server VPN address (CIDR)"  "IP and subnet for the server"        "Defines VPN subnet"                   "192.168.20.1/24"
-ask_var ENDPOINT  "Public endpoint (host:port)" "Your OpenWrt’s public hostname or IP" "Used by peers to connect"             "your.openwrt.hostname:$WG_PORT"
-ask_var LAN_ZONE  "LAN zone name"              "LAN firewall zone in OpenWrt"        "Enables LAN ↔ VPN traffic"            "lan"
-ask_var WAN_ZONE  "WAN zone name"              "WAN firewall zone in OpenWrt"        "Allows peer connections"              "wan"
+ask_var WG_IFACE "WireGuard interface name"  "VPN interface name in UCI"            "Used in network & firewall configs"   "wg0"
+ask_var WG_PORT  "UDP listen port"             "Port WireGuard listens on"            "Must be open/forwarded"                "51820"
+ask_var WG_ADDR  "Server VPN address (CIDR)"   "IP and subnet for the server"         "Defines VPN subnet"                     "192.168.20.1/24"
 
-# DNS & peer count
-DEFAULT_DNS="$(printf '%s\n' "$WG_ADDR" | cut -d/ -f1)"
-ask_var WG_DNS     "DNS server for peers" "DNS IP to suggest to peers" "Avoids DNS leaks / enables local names" "$DEFAULT_DNS"
-ask_var NUM_PEERS  "Number of peers to add" "How many devices will connect" "Each gets its own config & keypair"   "0"
+# Auto‑append /24 if mask missing
+case "$WG_ADDR" in
+  */*) ;;
+  *)
+    print_info "No subnet mask provided; assuming /24."
+    WG_ADDR="$WG_ADDR/24"
+    ;;
+esac
 
-# Validation: endpoint port
-case "$ENDPOINT" in *:*) ;; *) ENDPOINT="$ENDPOINT:$WG_PORT";; esac
-
-# CIDR format
+# Basic IPv4/CIDR validation
 if ! echo "$WG_ADDR" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$'; then
-  print_error "Invalid Server VPN address. Must be in CIDR format, e.g., 192.168.20.1/24"
+  print_error "Invalid Server VPN address. Must be IPv4/CIDR, e.g. 192.168.20.1/24"
   exit 1
 fi
 
-# Peer count numeric
+ask_var ENDPOINT "Public endpoint (host:port)" "Your OpenWrt’s public hostname or IP" "Used by peers to connect" "your.openwrt.hostname:$WG_PORT"
+ask_var LAN_ZONE "LAN zone name"              "LAN firewall zone in OpenWrt"         "Enables LAN ↔ VPN traffic"              "lan"
+ask_var WAN_ZONE "WAN zone name"              "WAN firewall zone in OpenWrt"         "Allows peer connections"                "wan"
+
+# DNS & peer count
+DEFAULT_DNS="$(printf '%s\n' "$WG_ADDR" | cut -d/ -f1)"
+ask_var WG_DNS    "DNS server for peers"      "DNS IP to suggest to peers"          "Avoids DNS leaks / enables local names" "$DEFAULT_DNS"
+ask_var NUM_PEERS "Number of peers to add"     "How many devices will connect"       "Each gets its own config & keypair"     "0"
+
+# Ensure endpoint has port
+case "$ENDPOINT" in *:*) ;; *) ENDPOINT="$ENDPOINT:$WG_PORT";; esac
+
+# Validate peer count numeric
 if ! printf '%s' "$NUM_PEERS" | grep -qE '^[0-9]+$'; then
   print_error "Invalid number of peers: $NUM_PEERS"
   exit 1
 fi
 
-# Backup
+# Backup existing configs
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 NET_BAK="/etc/config/network.bak.$TIMESTAMP"
 FW_BAK="/etc/config/firewall.bak.$TIMESTAMP"
@@ -101,7 +105,7 @@ cp /etc/config/firewall "$FW_BAK"
 print_info "  • network → $NET_BAK"
 print_info "  • firewall → $FW_BAK"
 
-# Server keys
+# Server keypair
 KEYDIR="/etc/wireguard"
 mkdir -p "$KEYDIR"
 if [ ! -f "$KEYDIR/privatekey" ]; then
@@ -112,18 +116,19 @@ else
   print_info "Found existing server keypair."
 fi
 
-SERVER_PRIV=$(tr -d '\r\n' < "$KEYDIR/privatekey")
-SERVER_PUB=$(tr -d '\r\n' < "$KEYDIR/publickey")
+SERVER_PRIV=$(tr -d '\r\n' <"$KEYDIR/privatekey")
+SERVER_PUB=$(tr -d '\r\n' <"$KEYDIR/publickey")
 [ -z "$SERVER_PUB" ] && { print_error "Server public key missing"; exit 1; }
 
 print_info ""
 print_info "Server public key: $SERVER_PUB"
 
+# Prepare peer directory
 PEERDIR="$KEYDIR/peers"
 mkdir -p "$PEERDIR"
 WG_SUBNET_BASE="$(echo "$WG_ADDR" | cut -d/ -f1 | awk -F. '{print $1"."$2"."$3}')"
 
-# Clean old peer sections
+# Remove old peer sections
 for sec in $(uci show network 2>/dev/null | grep "=wireguard_${WG_IFACE}" | cut -d. -f2); do
   uci delete network.$sec
 done
@@ -154,10 +159,10 @@ while [ "$count" -lt "$NUM_PEERS" ]; do
   PPRIV=$(wg genkey)
   PPUB=$(printf '%s' "$PPRIV" | wg pubkey)
 
-  printf '%s' "$PPRIV" > "$PEERDIR/$PNAME-privatekey"
-  printf '%s' "$PPUB" > "$PEERDIR/$PNAME-publickey"
+  printf '%s' "$PPRIV" >"$PEERDIR/$PNAME-privatekey"
+  printf '%s' "$PPUB" >"$PEERDIR/$PNAME-publickey"
 
-  cat > "$PEERDIR/$PNAME.conf" <<EOF
+  cat >"$PEERDIR/$PNAME.conf" <<EOF
 [Interface]
 PrivateKey = $PPRIV
 Address = $PIP
@@ -171,9 +176,9 @@ EOF
 
   print_info " Config generated: $PEERDIR/$PNAME.conf"
   if [ "$HAS_QR" -eq 1 ]; then
-    qrencode -t ansiutf8 < "$PEERDIR/$PNAME.conf"
+    qrencode -t ansiutf8 <"$PEERDIR/$PNAME.conf"
     if [ "$HAS_PNG" -eq 1 ]; then
-      qrencode -t png -o "$PEERDIR/$PNAME.png" < "$PEERDIR/$PNAME.conf"
+      qrencode -t png -o "$PEERDIR/$PNAME.png" <"$PEERDIR/$PNAME.conf"
       print_info "  → PNG saved: $PEERDIR/$PNAME.png"
     fi
   fi
@@ -183,6 +188,7 @@ $PNAME:$PPUB:$PIP"
   count=$((count+1))
 done
 
+# Clean existing addresses entry
 uci delete network.$WG_IFACE.addresses 2>/dev/null || true
 
 print_info ""
@@ -220,9 +226,9 @@ if ! uci show firewall | grep -q "firewall.@zone.*name='$WG_IFACE'"; then
   uci set firewall.@zone[-1].forward='DROP'
   uci add_list firewall.@zone[-1].network="$WG_IFACE"
 fi
-uci add firewall forwarding; uci set firewall.@forwarding[-1].src="$WG_IFACE"; uci set firewall.@forwarding[-1].dest="$LAN_ZONE"
-uci add firewall forwarding; uci set firewall.@forwarding[-1].src="$LAN_ZONE"; uci set firewall.@forwarding[-1].dest="$WG_IFACE"
-uci add firewall rule; uci set firewall.@rule[-1].name="Allow-WG-$WG_IFACE"; uci set firewall.@rule[-1].src="$WAN_ZONE"; uci set firewall.@rule[-1].proto='udp'; uci set firewall.@rule[-1].dest_port="$WG_PORT"; uci set firewall.@rule[-1].target='ACCEPT'
+uci add firewall forwarding;   uci set firewall.@forwarding[-1].src="$WG_IFACE"; uci set firewall.@forwarding[-1].dest="$LAN_ZONE"
+uci add firewall forwarding;   uci set firewall.@forwarding[-1].src="$LAN_ZONE"; uci set firewall.@forwarding[-1].dest="$WG_IFACE"
+uci add firewall rule;         uci set firewall.@rule[-1].name="Allow-WG-$WG_IFACE"; uci set firewall.@rule[-1].src="$WAN_ZONE"; uci set firewall.@rule[-1].proto='udp'; uci set firewall.@rule[-1].dest_port="$WG_PORT"; uci set firewall.@rule[-1].target='ACCEPT'
 uci commit firewall
 /etc/init.d/firewall restart
 
@@ -233,10 +239,10 @@ print_info "→ Peer configs in: $PEERDIR/"
 # Summary
 print_info ""
 print_info "Summary:"
-print_info "  Server: $WG_ADDR"
+print_info "  Server:   $WG_ADDR"
 print_info "  Endpoint: $ENDPOINT"
-print_info "  Port: $WG_PORT"
-print_info "  Peers: $NUM_PEERS"
+print_info "  Port:     $WG_PORT"
+print_info "  Peers:    $NUM_PEERS"
 
 print_info ""
 print_prompt "Rollback to backups? [y/N]: "
@@ -249,4 +255,3 @@ if [ "${rollback##[Yy]}" = "" ]; then
   /etc/init.d/firewall restart
   print_info "Rollback complete."
 fi
-
