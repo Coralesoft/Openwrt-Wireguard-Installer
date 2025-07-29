@@ -7,6 +7,7 @@
 #   outputs peer .conf files with optional QR codes, and supports rollback.
 #
 # Version: 2025.7.3 (fixed uci batch redirection)
+# Version: 2025.7.4 (fixes empty PublicKey bug, clean QR, stricter validation)
 
 set -e
 trap 'print_error "Error on line $LINENO"; exit 1' ERR
@@ -77,8 +78,15 @@ if [ ! -f "$KEYDIR/privatekey" ]; then
 else
   print_info "Found existing server keypair."
 fi
-SERVER_PRIV=$(< "$KEYDIR/privatekey")
-SERVER_PUB=$(< "$KEYDIR/publickey")
+
+# Re-read keys and validate
+SERVER_PRIV=$(cat "$KEYDIR/privatekey" | tr -d '\r\n')
+SERVER_PUB=$(cat "$KEYDIR/publickey" | tr -d '\r\n')
+
+if [ -z "$SERVER_PUB" ]; then
+  print_error "Server public key is missing or empty. Aborting."
+  exit 1
+fi
 
 print_info ""
 print_info "Server public key: $SERVER_PUB"
@@ -117,12 +125,12 @@ while [ "$count" -lt "$NUM_PEERS" ]; do
   printf '%s' "$PPRIV" > "$PEERDIR/$PNAME-privatekey"
   printf '%s' "$PPUB" > "$PEERDIR/$PNAME-publickey"
 
+  # Write peer config with no leading blank lines
   cat > "$PEERDIR/$PNAME.conf" <<EOF
 [Interface]
 PrivateKey = $PPRIV
 Address = $PIP
 DNS = $WG_DNS
-
 [Peer]
 PublicKey = $SERVER_PUB
 Endpoint = $ENDPOINT
@@ -131,17 +139,22 @@ PersistentKeepalive = 25
 EOF
 
   print_info " Config generated: $PEERDIR/$PNAME.conf"
-  [ "$HAS_QR" -eq 1 ] && qrencode -t ansiutf8 < "$PEERDIR/$PNAME.conf"
+
+  if [ "$HAS_QR" -eq 1 ]; then
+    qrencode -t ansiutf8 < "$PEERDIR/$PNAME.conf"
+    qrencode -t png -o "$PEERDIR/$PNAME.png" < "$PEERDIR/$PNAME.conf"
+    print_info "  → Also saved PNG QR: $PEERDIR/$PNAME.png"
+  else
+    print_info "  (qrencode not installed, skipping QR code)"
+  fi
 
   PEERS="${PEERS}
 $PNAME:$PPUB:$PIP"
   count=$((count + 1))
 done
 
-# Clean up any old addresses entry safely
 uci delete network.$WG_IFACE.addresses 2>/dev/null || true
 
-# Apply main network config with uci batch (no redirection!)
 print_info ""
 print_info "Applying WireGuard network config…"
 uci batch <<EOF
@@ -152,7 +165,6 @@ set network.$WG_IFACE.listen_port='$WG_PORT'
 add_list network.$WG_IFACE.addresses='$WG_ADDR'
 EOF
 
-# Add peers
 printf '%s\n' "$PEERS" | while IFS=":" read -r NAME PUB IP; do
   [ -z "$NAME" ] && continue
   section="wireguard_${WG_IFACE}_${NAME}"
@@ -200,7 +212,7 @@ uci commit firewall
 print_info ""
 print_info "WireGuard '$WG_IFACE' setup complete."
 print_info "→ Peer configs saved in: $PEERDIR/"
-[ "$HAS_QR" -eq 1 ] && print_info "→ QR codes shown above (scan with the WireGuard app)."
+[ "$HAS_QR" -eq 1 ] && print_info "→ QR codes shown above (and PNG files saved)."
 
 print_info ""
 print_prompt "Do you want to rollback to previous network/firewall config? [y/N]: "
@@ -213,3 +225,4 @@ if [ "$rollback" = "y" ] || [ "$rollback" = "Y" ]; then
   /etc/init.d/firewall restart
   print_info "Rollback complete. Reverted to previous config."
 fi
+
