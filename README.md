@@ -14,7 +14,7 @@ v2025.7.5
 -  Optional QR code output for mobile devices
 -  Automatically applies UCI network and firewall rules
 -  Creates timestamped backups and supports rollback
--  Built specifically for OpenWrt (no external scripts or hacks)
+-  Built specifically for OpenWrt
 
 ---
 
