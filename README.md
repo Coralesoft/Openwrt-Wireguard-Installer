@@ -20,7 +20,7 @@ v2025.7.5
 
 ## 🧱 Requirements
 
-- OpenWrt 23.05 or newer
+- OpenWrt 23.05 or newer (tested on Raspberry Pi CM router and a x86 based router)
 - Installed packages:
   ```sh
   opkg update
