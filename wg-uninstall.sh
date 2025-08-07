@@ -79,7 +79,7 @@ done
 print_info "Wiping all contents of $WIREGUARD_DIR…"
 if [ "$DRY_RUN" -eq 0 ] && [ -d "$WIREGUARD_DIR" ]; then
   # find ... -mindepth 1 ensures we delete everything inside, but not the directory itself
-  find "$WIREGUARD_DIR" -mindepth 1 -exec rm -rf {} +
+  find "$WIREGUARD_DIR" -mindepth 1 -exec rm -rf {} + 2>/dev/null
 fi
 
 #
