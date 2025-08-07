@@ -16,6 +16,7 @@
 #  - Adds PNG support detection
 #  - Validates peer IP subnet
 #  - Prints summary at the end
+# Version: 2025.8.1 (Added Option description for wiregaurd Peers)
 
 set -e
 trap 'print_error "Error on line $LINENO"; exit 1' ERR
@@ -205,6 +206,7 @@ printf '%s\n' "$PEERS" | while IFS=":" read -r NAME PUB IP; do
   [ -z "$NAME" ] && continue
   section="wireguard_${WG_IFACE}_${NAME}"
   uci set network.$section=wireguard_${WG_IFACE}
+  uci set network.$section.description="$NAME"
   uci set network.$section.public_key=$PUB
   uci set network.$section.persistent_keepalive=25
   uci delete network.$section.allowed_ips 2>/dev/null || true
