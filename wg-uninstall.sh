@@ -1,42 +1,45 @@
 #!/bin/sh
-# wg-uninstall.sh — Cleanup script for WireGuard setup on OpenWrt (with dry-run support)
+# wg-uninstall.sh — Cleanup script for WireGuard on OpenWrt (with dry-run support)
+# Version: 2025.8.1
 
 set -e
 
 # Colours
-print_info()   { printf "\033[0;32m%s\033[0m\n" "$1"; }
-print_error()  { printf "\033[0;31m%s\033[0m\n" "$1"; }
+print_info()  { printf "\033[0;32m%s\033[0m\n" "$1"; }
+print_error() { printf "\033[0;31m%s\033[0m\n" "$1"; }
 
 WG_IFACE="wg0"
-PEERDIR="/etc/wireguard/peers"
+WIREGUARD_DIR="/etc/wireguard"
 DRY_RUN=0
 
-# Check for --dry-run flag
+# Dry-run flag?
 if [ "$1" = "--dry-run" ]; then
   DRY_RUN=1
   print_info "Running in dry-run mode. No changes will be made."
 fi
 
-print_info " This will remove WireGuard interface '$WG_IFACE', all peer configs, and related firewall rules."
-print_info "Make sure you’ve backed up any important configuration or peer files."
-
-print_info ""
-printf "Are you sure you want to proceed? [y/N]: "
+print_info "This will remove WireGuard interface '$WG_IFACE', all peer configs, related firewall rules,"
+print_info "and completely wipe the contents of $WIREGUARD_DIR."
+printf "\nAre you sure you want to proceed? [y/N]: "
 read -r confirm
-[ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || {
-  print_info "Aborted."
-  exit 0
-}
+case "$confirm" in [yY]) ;; *) print_info "Aborted."; exit 0;; esac
 
-# Remove network config
-if uci get network."$WG_IFACE" >/dev/null 2>&1; then
+#
+# 1) Remove UCI network interface
+#
+if uci show network."$WG_IFACE" >/dev/null 2>&1; then
   print_info "Removing network interface '$WG_IFACE'…"
   [ "$DRY_RUN" -eq 0 ] && uci delete network."$WG_IFACE"
 fi
 
-for peer in $(uci show network | grep "^network.wireguard_${WG_IFACE}_" | cut -d. -f2); do
-  print_info "Removing peer config section '$peer'…"
-  [ "$DRY_RUN" -eq 0 ] && uci delete network."$peer"
+# 2) Remove all wireguard peer sections (config type '@wireguard_wg0[...]')
+for idx in $( \
+    uci show network \
+    | awk -F'[@\\[\\]]' '/@wireguard_'${WG_IFACE}'\[/ {print $3}' \
+    | sort -un \
+  ); do
+  print_info "Removing peer section '@wireguard_${WG_IFACE}[${idx}]'…"
+  [ "$DRY_RUN" -eq 0 ] && uci delete network.@wireguard_${WG_IFACE}[${idx}]
 done
 
 [ "$DRY_RUN" -eq 0 ] && {
@@ -44,9 +47,16 @@ done
   /etc/init.d/network restart
 }
 
-# Remove firewall rules
+#
+# 3) Clean up any firewall rules/zones mentioning the interface
+#
 print_info "Cleaning up firewall rules…"
-uci show firewall | grep "'$WG_IFACE'" | cut -d. -f2 | sort -u | while read -r section; do
+for section in $( \
+    uci show firewall \
+    | grep "$WG_IFACE" \
+    | cut -d. -f2 \
+    | sort -u \
+  ); do
   print_info "Removing firewall section '$section'…"
   [ "$DRY_RUN" -eq 0 ] && uci delete firewall."$section"
 done
@@ -56,19 +66,26 @@ done
   /etc/init.d/firewall restart
 }
 
-# Remove keys and peer configs
-print_info "Deleting WireGuard keys and peer config files…"
-[ "$DRY_RUN" -eq 0 ] && rm -rf /etc/wireguard/privatekey /etc/wireguard/publickey "$PEERDIR"
+#
+# 4) Wipe out /etc/wireguard entirely (all keys, configs, peers dir, etc)
+#
+print_info "Wiping all contents of $WIREGUARD_DIR…"
+if [ "$DRY_RUN" -eq 0 ] && [ -d "$WIREGUARD_DIR" ]; then
+  # find ... -mindepth 1 ensures we delete everything inside, but not the directory itself
+  find "$WIREGUARD_DIR" -mindepth 1 -exec rm -rf {} +
+fi
 
-# Remove live interface
+#
+# 5) Remove any live WireGuard link
+#
 if ip link show "$WG_IFACE" >/dev/null 2>&1; then
-  print_info "Removing live WireGuard interface '$WG_IFACE'…"
+  print_info "Deleting live WireGuard interface '$WG_IFACE'…"
   [ "$DRY_RUN" -eq 0 ] && ip link delete "$WG_IFACE"
 fi
 
 print_info ""
 if [ "$DRY_RUN" -eq 1 ]; then
-  print_info " Dry-run complete. No changes were made."
+  print_info "Dry-run complete. No changes were made."
 else
   print_info "WireGuard uninstalled and cleaned up successfully."
 fi
