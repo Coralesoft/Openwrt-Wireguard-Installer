@@ -130,7 +130,7 @@ mkdir -p "$PEERDIR"
 WG_SUBNET_BASE="$(echo "$WG_ADDR" | cut -d/ -f1 | awk -F. '{print $1"."$2"."$3}')"
 
 # Remove old peer sections
-for sec in $(uci show network 2>/dev/null | grep "=wireguard_${WG_IFACE}" | cut -d. -f2); do
+for sec in $(uci show network 2>/dev/null | grep -F "=wireguard_${WG_IFACE}" | cut -d. -f2); do
   uci delete network.$sec
 done
 
