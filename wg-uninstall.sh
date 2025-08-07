@@ -51,14 +51,21 @@ done
 # 3) Clean up any firewall rules/zones mentioning the interface
 #
 print_info "Cleaning up firewall rules…"
-for section in $( \
-    uci show firewall \
-    | grep "$WG_IFACE" \
-    | cut -d. -f2 \
-    | sort -u \
-  ); do
+# 1) List all sections that mention wg0, e.g. @forwarding[1], @rule[5], @zone[3]…
+# 2) uniq them
+# 3) sort -t'[' -k2,2nr  sorts by the number inside the brackets, descending
+sections=$(uci show firewall \
+  | grep "$WG_IFACE" \
+  | cut -d. -f2 \
+  | sort -u \
+  | sort -t'[' -k2,2nr)
+
+for section in $sections; do
   print_info "Removing firewall section '$section'…"
-  [ "$DRY_RUN" -eq 0 ] && uci delete firewall."$section"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    uci delete firewall."$section" 2>/dev/null || \
+      print_info "  → section $section not found, skipping"
+  fi
 done
 
 [ "$DRY_RUN" -eq 0 ] && {
