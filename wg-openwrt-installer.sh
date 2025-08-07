@@ -16,7 +16,7 @@
 #  - Adds PNG support detection
 #  - Validates peer IP subnet
 #  - Prints summary at the end
-# Version: 2025.8.1 (Added Option description for wiregaurd Peers)
+# Version: 2025.8.1 (Added Option description for wiregaurd Peers and fixed rollback default of N)
 
 set -e
 trap 'print_error "Error on line $LINENO"; exit 1' ERR
@@ -249,6 +249,7 @@ print_info "  Peers:    $NUM_PEERS"
 print_info ""
 print_prompt "Rollback to backups? [y/N]: "
 read -r rollback
+rollback=${rollback:-n}
 if [ "${rollback##[Yy]}" = "" ]; then
   print_info "Rolling back…"
   cp "$NET_BAK" /etc/config/network
