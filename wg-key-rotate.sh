@@ -1,7 +1,9 @@
 #!/bin/sh
 # wg-key-rotate.sh - WireGuard key rotation script for OpenWrt
-# Version: 1.0.0
+#
 # Description: Safely rotates WireGuard server and/or peer keys with minimal downtime
+#
+# Version: 2025.9.1
 #
 # Usage: ./wg-key-rotate.sh [--server] [--peer=NAME] [--all-peers] [--backup]
 
