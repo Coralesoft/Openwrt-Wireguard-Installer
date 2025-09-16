@@ -259,25 +259,9 @@ Options:
   --interface=NAME   Specify interface (default: wg0)
 ```
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit issues and pull requests.
-
-### Development
-- Scripts follow POSIX shell standards
-- Compatible with OpenWrt's ash shell
-- Extensive error checking and validation
-- User-friendly colored output
-
 ## 📄 License
 
 This project is open source and available under the [MIT License](LICENSE).
-
-## 🙏 Acknowledgments
-
-- WireGuard® is a registered trademark of Jason A. Donenfeld
-- OpenWrt Project for the excellent router firmware
-- Community contributors and testers
 
 ## 📮 Support
 
