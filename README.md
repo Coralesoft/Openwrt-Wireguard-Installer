@@ -80,8 +80,8 @@ Each peer gets:
 #### On Desktop/Laptop:
 ```bash
 # Copy the .conf file to the peer device, then:
-sudo cp peer.conf /etc/wireguard/wg0.conf
-sudo wg-quick up wg0
+cp peer.conf /etc/wireguard/wg0.conf
+wg-quick up wg0
 ```
 
 ## 🔑 Key Rotation
