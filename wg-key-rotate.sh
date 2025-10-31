@@ -171,7 +171,7 @@ if [ "$ROTATE_SERVER" -eq 1 ]; then
       backup_file "$conf"
       
       # Replace the server's public key in peer config
-      sed -i "s/^PublicKey = .*/PublicKey = $NEW_SERVER_PUB/" "$conf"
+      sed -i "s|^PublicKey = .*|PublicKey = $NEW_SERVER_PUB|" "$conf"
     done
   fi
 else
