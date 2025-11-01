@@ -8,30 +8,124 @@
 #
 # Version: 2025.7.3 (fixed uci batch redirection)
 # Version: 2025.7.4 (fixes empty PublicKey bug, clean QR, stricter validation)
-# Version: 2025.7.5 (robustness updates and logic fixes)  
-#  - Auto‑append /24 mask to WG_ADDR if missing
-#  - Basic IPv4/CIDR validation
-#  - Ensures Endpoint includes port
-#  - Cleans old UCI peer sections
-#  - Adds PNG support detection
-#  - Validates peer IP subnet
-#  - Prints summary at the end
+# Version: 2025.7.5 (robustness updates and logic fixes)
 # Version: 2025.8.1 (Added Option description for wiregaurd Peers and fixed rollback default of N)
+# Version: 2025.11.1 (Adds /etc/wireguard to OpenWrt backup configuration)
+# Version: 2025.11.2 (Adds automatic package installation option)
+#
+# Copyright (c) 2025 C.Brown CoraleSoft
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
 set -e
 trap 'print_error "Error on line $LINENO"; exit 1' ERR
 
 print_info()   { printf "\033[0;32m%s\033[0m\n" "$1"; }
 print_error()  { printf "\033[0;31m%s\033[0m\n" "$1"; }
+print_warn()   { printf "\033[0;33m%s\033[0m\n" "$1"; }
 print_prompt() { printf "\033[0;33m%s\033[0m"   "$1"; }
 
-# Ensure required commands
-for cmd in wg uci; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    print_error "Missing '$cmd'. Run: opkg update && opkg install wireguard-tools luci-app-wireguard"
-    exit 1
+# Check for required packages
+MISSING_PKGS=""
+OPTIONAL_PKGS=""
+
+if ! command -v opkg >/dev/null 2>&1; then
+  print_error "This script requires OpenWrt's opkg package manager"
+  exit 1
+fi
+
+if ! command -v uci >/dev/null 2>&1; then
+  print_error "UCI not found. This script requires OpenWrt."
+  exit 1
+fi
+
+# Check for WireGuard tools
+if ! command -v wg >/dev/null 2>&1; then
+  MISSING_PKGS="$MISSING_PKGS wireguard-tools"
+fi
+
+# Check if kmod-wireguard is loaded/available
+if ! opkg list-installed | grep -q "kmod-wireguard"; then
+  if opkg list | grep -q "^kmod-wireguard "; then
+    MISSING_PKGS="$MISSING_PKGS kmod-wireguard"
   fi
-done
+fi
+
+# Check for luci-app-wireguard (helpful but not strictly required)
+if ! opkg list-installed | grep -q "luci-app-wireguard"; then
+  if opkg list | grep -q "^luci-app-wireguard "; then
+    MISSING_PKGS="$MISSING_PKGS luci-app-wireguard"
+  fi
+fi
+
+# Check for optional qrencode
+if ! command -v qrencode >/dev/null 2>&1; then
+  if opkg list | grep -q "^qrencode "; then
+    OPTIONAL_PKGS="$OPTIONAL_PKGS qrencode"
+  fi
+fi
+
+# Install missing packages if needed
+if [ -n "$MISSING_PKGS" ] || [ -n "$OPTIONAL_PKGS" ]; then
+  print_warn ""
+  print_warn "Missing packages detected:"
+
+  if [ -n "$MISSING_PKGS" ]; then
+    print_error "  Required:$MISSING_PKGS"
+  fi
+
+  if [ -n "$OPTIONAL_PKGS" ]; then
+    print_warn "  Optional:$OPTIONAL_PKGS (for QR codes)"
+  fi
+
+  print_info ""
+  print_prompt "Install missing packages now? [Y/n]: "
+  read -r install_pkgs
+  install_pkgs=${install_pkgs:-y}
+
+  if [ "${install_pkgs##[Nn]}" = "" ]; then
+    if [ -n "$MISSING_PKGS" ]; then
+      print_error "Required packages not installed. Cannot continue."
+      print_info "Install manually: opkg update && opkg install$MISSING_PKGS"
+      exit 1
+    else
+      print_info "Skipping optional packages. Continuing without QR code support."
+    fi
+  else
+    print_info ""
+    print_info "Updating package lists..."
+    opkg update
+
+    if [ -n "$MISSING_PKGS" ]; then
+      print_info "Installing required packages:$MISSING_PKGS"
+      opkg install $MISSING_PKGS
+    fi
+
+    if [ -n "$OPTIONAL_PKGS" ]; then
+      print_info "Installing optional packages:$OPTIONAL_PKGS"
+      opkg install $OPTIONAL_PKGS
+    fi
+
+    print_info "Package installation complete!"
+  fi
+  print_info ""
+fi
 
 # Detect qrencode & PNG support
 HAS_QR=0
@@ -55,7 +149,9 @@ ask_var() {
   eval "$name=\"\${reply:-$default}\""
 }
 
+print_info ""
 print_info "Welcome to the WireGuard auto‑setup for OpenWrt!"
+print_info ""
 
 # Collect inputs
 ask_var WG_IFACE "WireGuard interface name"  "VPN interface name in UCI"            "Used in network & firewall configs"   "wg0"
@@ -120,6 +216,17 @@ fi
 SERVER_PRIV=$(tr -d '\r\n' <"$KEYDIR/privatekey")
 SERVER_PUB=$(tr -d '\r\n' <"$KEYDIR/publickey")
 [ -z "$SERVER_PUB" ] && { print_error "Server public key missing"; exit 1; }
+
+# Add WireGuard directory to OpenWrt backup
+if [ -f /etc/sysupgrade.conf ]; then
+  if ! grep -q "^/etc/wireguard" /etc/sysupgrade.conf 2>/dev/null; then
+    print_info "Adding /etc/wireguard to backup configuration…"
+    echo "/etc/wireguard" >> /etc/sysupgrade.conf
+  fi
+else
+  print_info "Creating backup configuration…"
+  echo "/etc/wireguard" > /etc/sysupgrade.conf
+fi
 
 print_info ""
 print_info "Server public key: $SERVER_PUB"
