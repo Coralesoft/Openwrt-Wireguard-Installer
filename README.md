@@ -17,8 +17,8 @@ A comprehensive set of scripts for automated WireGuard VPN setup, management, an
 
 | Script | Purpose | Version |
 |--------|---------|---------|
-| `wg-openwrt-installer.sh` | Main installer and initial peer setup | 2025.11.2 |
-| `wg-peer-manage.sh` | Interactive peer management | 2025.11.2 |
+| `wg-openwrt-installer.sh` | Main installer and initial peer setup | 2026.1.0 |
+| `wg-peer-manage.sh` | Interactive peer management | 2026.1.0 |
 | `wg-key-rotate.sh` | Key rotation for security | 2025.9.1 |
 | `wg-uninstall.sh` | Clean removal of WireGuard | 2025.11.2 |
 
@@ -32,7 +32,7 @@ A comprehensive set of scripts for automated WireGuard VPN setup, management, an
 The installer will automatically detect and offer to install:
 - `wireguard-tools` - WireGuard command-line utilities
 - `kmod-wireguard` - WireGuard kernel module
-- `luci-app-wireguard` - LuCI web interface integration
+- `luci-proto-wireguard` - LuCI web interface integration
 
 ### Optional Packages
 - `qrencode` - QR code generation for mobile devices
@@ -340,7 +340,7 @@ wg show wg0 dump
 ```
 
 ### Using LuCI Web Interface
-If `luci-app-wireguard` is installed:
+If `luci-proto-wireguard` is installed:
 1. Navigate to: `Status` → `WireGuard`
 2. View connected peers and traffic statistics
 3. Or: `Network` → `Interfaces` → `wg0` → `Edit`
@@ -480,7 +480,7 @@ wg show wg0
 
 This project is open source and available under the [MIT License](LICENSE).
 
-**Copyright:** C.Brown CoraleSoft, 2025
+**Copyright:** C.Brown CoraleSoft, 2025-2026
 
 ## 📮 Support
 
@@ -497,7 +497,11 @@ For issues, questions, or suggestions:
 
 ## 🎯 Version History
 
-### 2025.11.2 (Current)
+### 2026.1.0 (Current)
+- 🐛 Fixed peer names with hyphens causing UCI errors (issue #6)
+- 🐛 Fixed LuCI "missing protocol" by using `luci-proto-wireguard` (issue #7)
+
+### 2025.11.2
 - ✨ Added automatic package installation
 - ✨ Added interactive peer management tool (`wg-peer-manage.sh`)
 - ✨ Added backup configuration integration (`/etc/sysupgrade.conf`)

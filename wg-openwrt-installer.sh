@@ -12,8 +12,9 @@
 # Version: 2025.8.1 (Added Option description for wiregaurd Peers and fixed rollback default of N)
 # Version: 2025.11.1 (Adds /etc/wireguard to OpenWrt backup configuration)
 # Version: 2025.11.2 (Adds automatic package installation option)
+# Version: 2026.1.0 (Fix UCI section names with hyphens, use luci-proto-wireguard)
 #
-# Copyright (c) 2025 C.Brown CoraleSoft
+# Copyright (c) 2025-2026 C.Brown CoraleSoft
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -67,10 +68,10 @@ if ! opkg list-installed | grep -q "kmod-wireguard"; then
   fi
 fi
 
-# Check for luci-app-wireguard (helpful but not strictly required)
-if ! opkg list-installed | grep -q "luci-app-wireguard"; then
-  if opkg list | grep -q "^luci-app-wireguard "; then
-    MISSING_PKGS="$MISSING_PKGS luci-app-wireguard"
+# Check for luci-proto-wireguard (required for LuCI interface support)
+if ! opkg list-installed | grep -q "luci-proto-wireguard"; then
+  if opkg list | grep -q "^luci-proto-wireguard "; then
+    MISSING_PKGS="$MISSING_PKGS luci-proto-wireguard"
   fi
 fi
 
@@ -311,7 +312,9 @@ EOF
 
 printf '%s\n' "$PEERS" | while IFS=":" read -r NAME PUB IP; do
   [ -z "$NAME" ] && continue
-  section="wireguard_${WG_IFACE}_${NAME}"
+  # Sanitize section name (UCI only allows alphanumeric and underscore)
+  SNAME=$(echo "$NAME" | sed 's/[^a-zA-Z0-9_]/_/g')
+  section="wireguard_${WG_IFACE}_${SNAME}"
   uci set network.$section=wireguard_${WG_IFACE}
   uci set network.$section.description="$NAME"
   uci set network.$section.public_key=$PUB

@@ -5,9 +5,9 @@
 #   Manages WireGuard peers: add, remove, list, show status, enable/disable.
 #   Supports both command-line flags and interactive menu mode.
 #
-# Version: 2025.11.2
+# Version: 2026.1.0
 #
-# Copyright (c) 2025 C.Brown CoraleSoft
+# Copyright (c) 2025-2026 C.Brown CoraleSoft
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -430,8 +430,9 @@ EOF
   print_info ""
   print_info "Adding peer to UCI configuration..."
 
-  # Add to UCI
-  section="wireguard_${WG_IFACE}_${new_peer_name}"
+  # Add to UCI - sanitize section name (UCI only allows alphanumeric and underscore)
+  sanitized_name=$(echo "$new_peer_name" | sed 's/[^a-zA-Z0-9_]/_/g')
+  section="wireguard_${WG_IFACE}_${sanitized_name}"
   uci set network.$section=wireguard_${WG_IFACE}
   uci set network.$section.description="$new_peer_name"
   uci set network.$section.public_key="$PPUB"
