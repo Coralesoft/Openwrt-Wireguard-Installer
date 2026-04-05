@@ -5,7 +5,7 @@
 #   Manages WireGuard peers: add, remove, list, show status, enable/disable.
 #   Supports both command-line flags and interactive menu mode.
 #
-# Version: 2026.1.0
+# Version: 2026.4.1
 #
 # Copyright (c) 2025-2026 C.Brown CoraleSoft
 #
@@ -134,7 +134,11 @@ done
 # Ensure required commands
 for cmd in wg uci; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    print_error "Missing '$cmd'. Run: opkg update && opkg install wireguard-tools"
+    if command -v apk >/dev/null 2>&1; then
+      print_error "Missing '$cmd'. Run: apk update && apk add wireguard-tools"
+    else
+      print_error "Missing '$cmd'. Run: opkg update && opkg install wireguard-tools"
+    fi
     exit 1
   fi
 done
@@ -160,6 +164,19 @@ WG_PORT=$(uci get network."$WG_IFACE".listen_port 2>/dev/null || echo "51820")
 SERVER_ADDR=$(uci get network."$WG_IFACE".addresses 2>/dev/null | head -n1)
 WG_SUBNET_BASE="$(echo "$SERVER_ADDR" | cut -d/ -f1 | awk -F. '{print $1"."$2"."$3}')"
 DEFAULT_DNS="$(echo "$SERVER_ADDR" | cut -d/ -f1)"
+
+# Find UCI section name for a peer by its description
+find_peer_section() {
+  _peer_name="$1"
+  for _section in $(uci show network 2>/dev/null | grep "=wireguard_${WG_IFACE}$" | cut -d. -f2 | cut -d= -f1); do
+    _desc=$(uci get network."$_section".description 2>/dev/null || echo "")
+    if [ "$_desc" = "$_peer_name" ]; then
+      echo "$_section"
+      return 0
+    fi
+  done
+  return 1
+}
 
 #
 # FUNCTION: LIST
@@ -211,16 +228,7 @@ do_show() {
     return 1
   fi
 
-  # Find UCI section
-  uci_section=""
-  for section in $(uci show network 2>/dev/null | grep "=wireguard_${WG_IFACE}$" | cut -d. -f2 | cut -d= -f1); do
-    desc=$(uci get network."$section".description 2>/dev/null || "")
-    if [ "$desc" = "$peer_name" ]; then
-      uci_section="$section"
-      break
-    fi
-  done
-
+  uci_section=$(find_peer_section "$peer_name")
   if [ -z "$uci_section" ]; then
     print_error "Peer '$peer_name' not found"
     return 1
@@ -306,13 +314,10 @@ do_add() {
   fi
 
   # Check if peer already exists
-  for section in $(uci show network 2>/dev/null | grep "=wireguard_${WG_IFACE}$" | cut -d. -f2 | cut -d= -f1); do
-    desc=$(uci get network."$section".description 2>/dev/null || "")
-    if [ "$desc" = "$new_peer_name" ]; then
-      print_error "Peer '$new_peer_name' already exists"
-      return 1
-    fi
-  done
+  if find_peer_section "$new_peer_name" >/dev/null 2>&1; then
+    print_error "Peer '$new_peer_name' already exists"
+    return 1
+  fi
 
   # Find next available IP - build list of used IPs from all peers
   used_ips=""
@@ -474,16 +479,7 @@ do_remove() {
     return 1
   fi
 
-  # Find UCI section
-  uci_section=""
-  for section in $(uci show network 2>/dev/null | grep "=wireguard_${WG_IFACE}$" | cut -d. -f2 | cut -d= -f1); do
-    desc=$(uci get network."$section".description 2>/dev/null || "")
-    if [ "$desc" = "$peer_name" ]; then
-      uci_section="$section"
-      break
-    fi
-  done
-
+  uci_section=$(find_peer_section "$peer_name")
   if [ -z "$uci_section" ]; then
     print_error "Peer '$peer_name' not found"
     return 1
@@ -551,16 +547,7 @@ do_enable() {
     return 1
   fi
 
-  # Find UCI section
-  uci_section=""
-  for section in $(uci show network 2>/dev/null | grep "=wireguard_${WG_IFACE}$" | cut -d. -f2 | cut -d= -f1); do
-    desc=$(uci get network."$section".description 2>/dev/null || "")
-    if [ "$desc" = "$peer_name" ]; then
-      uci_section="$section"
-      break
-    fi
-  done
-
+  uci_section=$(find_peer_section "$peer_name")
   if [ -z "$uci_section" ]; then
     print_error "Peer '$peer_name' not found"
     return 1
@@ -594,16 +581,7 @@ do_disable() {
     return 1
   fi
 
-  # Find UCI section
-  uci_section=""
-  for section in $(uci show network 2>/dev/null | grep "=wireguard_${WG_IFACE}$" | cut -d. -f2 | cut -d= -f1); do
-    desc=$(uci get network."$section".description 2>/dev/null || "")
-    if [ "$desc" = "$peer_name" ]; then
-      uci_section="$section"
-      break
-    fi
-  done
-
+  uci_section=$(find_peer_section "$peer_name")
   if [ -z "$uci_section" ]; then
     print_error "Peer '$peer_name' not found"
     return 1
@@ -677,18 +655,24 @@ do_active() {
     allowed=$(uci get network."$section".allowed_ips 2>/dev/null | head -n1 || echo "N/A")
 
     if [ -n "$pubkey" ]; then
-      # Check if peer has recent handshake (within 3 minutes = 180 seconds)
-      handshake_ago=$(wg show "$WG_IFACE" dump | grep "$pubkey" | awk '{print $5}' || echo "0")
+      # wg show dump gives handshake as unix epoch, convert to seconds ago
+      handshake_epoch=$(wg show "$WG_IFACE" dump | grep "$pubkey" | awk '{print $5}' || echo "0")
 
-      if [ "$handshake_ago" != "0" ] && [ -n "$handshake_ago" ] && [ "$handshake_ago" -lt 180 ]; then
-        found=1
-        endpoint=$(wg show "$WG_IFACE" dump | grep "$pubkey" | awk '{print $3":"$4}' || echo "N/A")
+      if [ "$handshake_epoch" != "0" ] && [ -n "$handshake_epoch" ]; then
+        now=$(date +%s)
+        handshake_ago=$((now - handshake_epoch))
 
-        print_info "  Peer: $desc"
-        print_info "    IP:       $allowed"
-        print_info "    Endpoint: $endpoint"
-        print_info "    Last:     ${handshake_ago}s ago"
-        print_info ""
+        # Active if handshake within 3 minutes
+        if [ "$handshake_ago" -ge 0 ] && [ "$handshake_ago" -lt 180 ]; then
+          found=1
+          endpoint=$(wg show "$WG_IFACE" dump | grep "$pubkey" | awk '{print $3}' || echo "N/A")
+
+          print_info "  Peer: $desc"
+          print_info "    IP:       $allowed"
+          print_info "    Endpoint: $endpoint"
+          print_info "    Last:     ${handshake_ago}s ago"
+          print_info ""
+        fi
       fi
     fi
   done
@@ -709,15 +693,7 @@ interactive_manage_peer() {
     clear_screen
 
     # Check if peer is enabled or disabled
-    uci_section=""
-    for section in $(uci show network 2>/dev/null | grep "=wireguard_${WG_IFACE}$" | cut -d. -f2 | cut -d= -f1); do
-      desc=$(uci get network."$section".description 2>/dev/null || "")
-      if [ "$desc" = "$peer_name" ]; then
-        uci_section="$section"
-        break
-      fi
-    done
-
+    uci_section=$(find_peer_section "$peer_name")
     enabled=$(uci get network."$uci_section".disabled 2>/dev/null || echo "0")
 
     print_info ""

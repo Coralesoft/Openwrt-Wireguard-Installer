@@ -3,7 +3,7 @@
 #
 # Description: Safely rotates WireGuard server and/or peer keys with minimal downtime
 #
-# Version: 2025.9.1
+# Version: 2026.4.1
 #
 # Usage: ./wg-key-rotate.sh [--server] [--peer=NAME] [--all-peers] [--backup]
 #
@@ -111,7 +111,11 @@ fi
 # Check requirements
 if ! command -v wg >/dev/null 2>&1; then
   print_error "WireGuard tools not found. Install with:"
-  print_error "  opkg update && opkg install wireguard-tools"
+  if command -v apk >/dev/null 2>&1; then
+    print_error "  apk update && apk add wireguard-tools"
+  else
+    print_error "  opkg update && opkg install wireguard-tools"
+  fi
   exit 1
 fi
 
@@ -236,7 +240,7 @@ if [ -n "$PEERS_TO_ROTATE" ]; then
     # Find the UCI section for this peer
     uci_section=""
     for section in $(uci show network | grep "=wireguard_${WG_IFACE}$" | cut -d. -f2 | cut -d= -f1); do
-      desc=$(uci get network."$section".description 2>/dev/null || "")
+      desc=$(uci get network."$section".description 2>/dev/null || echo "")
       if [ "$desc" = "$peer_name" ]; then
         uci_section="$section"
         break

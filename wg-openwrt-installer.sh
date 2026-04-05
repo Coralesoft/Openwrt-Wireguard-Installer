@@ -13,6 +13,7 @@
 # Version: 2025.11.1 (Adds /etc/wireguard to OpenWrt backup configuration)
 # Version: 2025.11.2 (Adds automatic package installation option)
 # Version: 2026.1.0 (Fix UCI section names with hyphens, use luci-proto-wireguard)
+# Version: 2026.4.1 (Support apk package manager for OpenWrt 24.10+)
 #
 # Copyright (c) 2025-2026 C.Brown CoraleSoft
 #
@@ -42,12 +43,13 @@ print_error()  { printf "\033[0;31m%s\033[0m\n" "$1"; }
 print_warn()   { printf "\033[0;33m%s\033[0m\n" "$1"; }
 print_prompt() { printf "\033[0;33m%s\033[0m"   "$1"; }
 
-# Check for required packages
-MISSING_PKGS=""
-OPTIONAL_PKGS=""
-
-if ! command -v opkg >/dev/null 2>&1; then
-  print_error "This script requires OpenWrt's opkg package manager"
+# OpenWrt 24.10+ uses apk instead of opkg
+if command -v apk >/dev/null 2>&1; then
+  PKG_MGR="apk"
+elif command -v opkg >/dev/null 2>&1; then
+  PKG_MGR="opkg"
+else
+  print_error "No package manager found (need apk or opkg). Is this OpenWrt?"
   exit 1
 fi
 
@@ -56,28 +58,47 @@ if ! command -v uci >/dev/null 2>&1; then
   exit 1
 fi
 
+# Check for required packages
+MISSING_PKGS=""
+OPTIONAL_PKGS=""
+
 # Check for WireGuard tools
 if ! command -v wg >/dev/null 2>&1; then
   MISSING_PKGS="$MISSING_PKGS wireguard-tools"
 fi
 
 # Check if kmod-wireguard is loaded/available
-if ! opkg list-installed | grep -q "kmod-wireguard"; then
-  if opkg list | grep -q "^kmod-wireguard "; then
-    MISSING_PKGS="$MISSING_PKGS kmod-wireguard"
-  fi
+if [ "$PKG_MGR" = "apk" ]; then
+  kmod_installed=$(apk list --installed 2>/dev/null | grep -c "^kmod-wireguard ")
+  kmod_available=$(apk list 2>/dev/null | grep -c "^kmod-wireguard ")
+else
+  kmod_installed=$(opkg list-installed 2>/dev/null | grep -c "kmod-wireguard")
+  kmod_available=$(opkg list 2>/dev/null | grep -c "^kmod-wireguard ")
+fi
+if [ "$kmod_installed" -eq 0 ] && [ "$kmod_available" -gt 0 ]; then
+  MISSING_PKGS="$MISSING_PKGS kmod-wireguard"
 fi
 
 # Check for luci-proto-wireguard (required for LuCI interface support)
-if ! opkg list-installed | grep -q "luci-proto-wireguard"; then
-  if opkg list | grep -q "^luci-proto-wireguard "; then
-    MISSING_PKGS="$MISSING_PKGS luci-proto-wireguard"
-  fi
+if [ "$PKG_MGR" = "apk" ]; then
+  luci_installed=$(apk list --installed 2>/dev/null | grep -c "^luci-proto-wireguard ")
+  luci_available=$(apk list 2>/dev/null | grep -c "^luci-proto-wireguard ")
+else
+  luci_installed=$(opkg list-installed 2>/dev/null | grep -c "luci-proto-wireguard")
+  luci_available=$(opkg list 2>/dev/null | grep -c "^luci-proto-wireguard ")
+fi
+if [ "$luci_installed" -eq 0 ] && [ "$luci_available" -gt 0 ]; then
+  MISSING_PKGS="$MISSING_PKGS luci-proto-wireguard"
 fi
 
 # Check for optional qrencode
 if ! command -v qrencode >/dev/null 2>&1; then
-  if opkg list | grep -q "^qrencode "; then
+  if [ "$PKG_MGR" = "apk" ]; then
+    qr_available=$(apk list 2>/dev/null | grep -c "^qrencode ")
+  else
+    qr_available=$(opkg list 2>/dev/null | grep -c "^qrencode ")
+  fi
+  if [ "$qr_available" -gt 0 ]; then
     OPTIONAL_PKGS="$OPTIONAL_PKGS qrencode"
   fi
 fi
@@ -103,7 +124,11 @@ if [ -n "$MISSING_PKGS" ] || [ -n "$OPTIONAL_PKGS" ]; then
   if [ "${install_pkgs##[Nn]}" = "" ]; then
     if [ -n "$MISSING_PKGS" ]; then
       print_error "Required packages not installed. Cannot continue."
-      print_info "Install manually: opkg update && opkg install$MISSING_PKGS"
+      if [ "$PKG_MGR" = "apk" ]; then
+        print_info "Install manually: apk update && apk add$MISSING_PKGS"
+      else
+        print_info "Install manually: opkg update && opkg install$MISSING_PKGS"
+      fi
       exit 1
     else
       print_info "Skipping optional packages. Continuing without QR code support."
@@ -111,16 +136,34 @@ if [ -n "$MISSING_PKGS" ] || [ -n "$OPTIONAL_PKGS" ]; then
   else
     print_info ""
     print_info "Updating package lists..."
-    opkg update
+    if [ "$PKG_MGR" = "apk" ]; then
+      apk update
+    else
+      opkg update
+    fi
 
     if [ -n "$MISSING_PKGS" ]; then
       print_info "Installing required packages:$MISSING_PKGS"
-      opkg install $MISSING_PKGS
+      if [ "$PKG_MGR" = "apk" ]; then
+        if ! apk add $MISSING_PKGS; then
+          print_error "Package installation failed. Check your internet connection."
+          exit 1
+        fi
+      else
+        if ! opkg install $MISSING_PKGS; then
+          print_error "Package installation failed. Check your internet connection."
+          exit 1
+        fi
+      fi
     fi
 
     if [ -n "$OPTIONAL_PKGS" ]; then
       print_info "Installing optional packages:$OPTIONAL_PKGS"
-      opkg install $OPTIONAL_PKGS
+      if [ "$PKG_MGR" = "apk" ]; then
+        apk add $OPTIONAL_PKGS || print_warn "Optional package install failed, continuing without QR support"
+      else
+        opkg install $OPTIONAL_PKGS || print_warn "Optional package install failed, continuing without QR support"
+      fi
     fi
 
     print_info "Package installation complete!"
@@ -157,6 +200,13 @@ print_info ""
 # Collect inputs
 ask_var WG_IFACE "WireGuard interface name"  "VPN interface name in UCI"            "Used in network & firewall configs"   "wg0"
 ask_var WG_PORT  "UDP listen port"             "Port WireGuard listens on"            "Must be open/forwarded"                "51820"
+
+# Validate port is numeric and in range
+if ! printf '%s' "$WG_PORT" | grep -qE '^[0-9]+$' || [ "$WG_PORT" -lt 1 ] || [ "$WG_PORT" -gt 65535 ]; then
+  print_error "Invalid port: $WG_PORT (must be 1-65535)"
+  exit 1
+fi
+
 ask_var WG_ADDR  "Server VPN address (CIDR)"   "IP and subnet for the server"         "Defines VPN subnet"                     "192.168.20.1/24"
 
 # Auto‑append /24 if mask missing
@@ -247,21 +297,50 @@ PEERS=""
 count=0
 while [ "$count" -lt "$NUM_PEERS" ]; do
   peer_num=$((count+1))
-  print_info ""
-  print_info "Peer #$peer_num details:"
-  print_prompt "   Name (no spaces): "
-  read -r PNAME
-  PNAME=${PNAME// /_}
-  [ -z "$PNAME" ] && { print_error "Name required"; continue; }
+  retries=0
+  valid=0
+  while [ "$valid" -eq 0 ]; do
+    if [ "$retries" -ge 3 ]; then
+      print_error "Too many invalid attempts for peer #$peer_num, skipping"
+      break
+    fi
 
-  DEFAULT_PIP="$WG_SUBNET_BASE.$((count+2))/32"
-  print_prompt "   Allowed IP [$DEFAULT_PIP]: "
-  read -r PIP
-  PIP=${PIP:-$DEFAULT_PIP}
+    print_info ""
+    print_info "Peer #$peer_num details:"
+    print_prompt "   Name (no spaces): "
+    read -r PNAME
+    PNAME=${PNAME// /_}
+    if [ -z "$PNAME" ]; then
+      print_error "Name required"
+      retries=$((retries+1))
+      continue
+    fi
 
-  case "$PIP" in */32) ;; *) print_error "Must include /32"; continue;; esac
-  if ! echo "$PIP" | grep -q "^$WG_SUBNET_BASE\."; then
-    print_error "IP $PIP not in subnet $WG_SUBNET_BASE"; continue
+    DEFAULT_PIP="$WG_SUBNET_BASE.$((count+2))/32"
+    print_prompt "   Allowed IP [$DEFAULT_PIP]: "
+    read -r PIP
+    PIP=${PIP:-$DEFAULT_PIP}
+
+    case "$PIP" in
+      */32) ;;
+      *)
+        print_error "Must include /32"
+        retries=$((retries+1))
+        continue
+        ;;
+    esac
+    if ! echo "$PIP" | grep -q "^$WG_SUBNET_BASE\."; then
+      print_error "IP $PIP not in subnet $WG_SUBNET_BASE"
+      retries=$((retries+1))
+      continue
+    fi
+
+    valid=1
+  done
+
+  if [ "$valid" -eq 0 ]; then
+    count=$((count+1))
+    continue
   fi
 
   umask 077
@@ -338,9 +417,34 @@ if ! uci show firewall | grep -q "firewall.@zone.*name='$WG_IFACE'"; then
   uci set firewall.@zone[-1].forward='DROP'
   uci add_list firewall.@zone[-1].network="$WG_IFACE"
 fi
-uci add firewall forwarding;   uci set firewall.@forwarding[-1].src="$WG_IFACE"; uci set firewall.@forwarding[-1].dest="$LAN_ZONE"
-uci add firewall forwarding;   uci set firewall.@forwarding[-1].src="$LAN_ZONE"; uci set firewall.@forwarding[-1].dest="$WG_IFACE"
-uci add firewall rule;         uci set firewall.@rule[-1].name="Allow-WG-$WG_IFACE"; uci set firewall.@rule[-1].src="$WAN_ZONE"; uci set firewall.@rule[-1].proto='udp'; uci set firewall.@rule[-1].dest_port="$WG_PORT"; uci set firewall.@rule[-1].target='ACCEPT'
+
+# Skip forwarding/rules that already exist
+fwd_wg_to_lan=0
+fwd_lan_to_wg=0
+for fwd in $(uci show firewall 2>/dev/null | grep "=forwarding$" | cut -d. -f2 | cut -d= -f1); do
+  fwd_src=$(uci get firewall.$fwd.src 2>/dev/null)
+  fwd_dest=$(uci get firewall.$fwd.dest 2>/dev/null)
+  [ "$fwd_src" = "$WG_IFACE" ] && [ "$fwd_dest" = "$LAN_ZONE" ] && fwd_wg_to_lan=1
+  [ "$fwd_src" = "$LAN_ZONE" ] && [ "$fwd_dest" = "$WG_IFACE" ] && fwd_lan_to_wg=1
+done
+if [ "$fwd_wg_to_lan" -eq 0 ]; then
+  uci add firewall forwarding
+  uci set firewall.@forwarding[-1].src="$WG_IFACE"
+  uci set firewall.@forwarding[-1].dest="$LAN_ZONE"
+fi
+if [ "$fwd_lan_to_wg" -eq 0 ]; then
+  uci add firewall forwarding
+  uci set firewall.@forwarding[-1].src="$LAN_ZONE"
+  uci set firewall.@forwarding[-1].dest="$WG_IFACE"
+fi
+if ! uci show firewall | grep -q "name='Allow-WG-$WG_IFACE'"; then
+  uci add firewall rule
+  uci set firewall.@rule[-1].name="Allow-WG-$WG_IFACE"
+  uci set firewall.@rule[-1].src="$WAN_ZONE"
+  uci set firewall.@rule[-1].proto='udp'
+  uci set firewall.@rule[-1].dest_port="$WG_PORT"
+  uci set firewall.@rule[-1].target='ACCEPT'
+fi
 uci commit firewall
 /etc/init.d/firewall restart
 

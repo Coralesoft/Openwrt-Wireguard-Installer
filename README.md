@@ -17,9 +17,9 @@ A comprehensive set of scripts for automated WireGuard VPN setup, management, an
 
 | Script | Purpose | Version |
 |--------|---------|---------|
-| `wg-openwrt-installer.sh` | Main installer and initial peer setup | 2026.1.0 |
-| `wg-peer-manage.sh` | Interactive peer management | 2026.1.0 |
-| `wg-key-rotate.sh` | Key rotation for security | 2025.9.1 |
+| `wg-openwrt-installer.sh` | Main installer and initial peer setup | 2026.4.1 |
+| `wg-peer-manage.sh` | Interactive peer management | 2026.4.1 |
+| `wg-key-rotate.sh` | Key rotation for security | 2026.4.1 |
 | `wg-uninstall.sh` | Clean removal of WireGuard | 2025.11.2 |
 
 ## 🔧 Prerequisites
@@ -27,6 +27,7 @@ A comprehensive set of scripts for automated WireGuard VPN setup, management, an
 ### OpenWrt Router Requirements
 - OpenWrt 23.05 or later
 - Internet connectivity for package installation
+- Supports both `apk` (OpenWrt 24.10+) and `opkg` (older versions) package managers
 
 ### Required Packages
 The installer will automatically detect and offer to install:
@@ -497,7 +498,10 @@ For issues, questions, or suggestions:
 
 ## 🎯 Version History
 
-### 2026.1.0 (Current)
+### 2026.4.1 (Current)
+- ✨ Support for `apk` package manager (OpenWrt 24.10+ switched from opkg to apk)
+
+### 2026.1.0
 - 🐛 Fixed peer names with hyphens causing UCI errors (issue #6)
 - 🐛 Fixed LuCI "missing protocol" by using `luci-proto-wireguard` (issue #7)
 
@@ -521,4 +525,4 @@ For issues, questions, or suggestions:
 
 **Note:** Always test in a safe environment before deploying to production. Keep backups of working configurations!
 
-**Tested on:** OpenWrt 23.05.x with various routers including Flint 2 (MT6000)
+**Tested on:** OpenWrt 23.05.x / 24.10.x with various routers including Flint 2 (MT6000)
