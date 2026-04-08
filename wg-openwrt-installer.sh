@@ -69,11 +69,11 @@ fi
 
 # Check if kmod-wireguard is loaded/available
 if [ "$PKG_MGR" = "apk" ]; then
-  kmod_installed=$(apk list --installed 2>/dev/null | grep -c "^kmod-wireguard ")
-  kmod_available=$(apk list 2>/dev/null | grep -c "^kmod-wireguard ")
+  kmod_installed=$(apk list --installed 2>/dev/null | grep -c "^kmod-wireguard")
+  kmod_available=$(apk list 2>/dev/null | grep -c "^kmod-wireguard")
 else
   kmod_installed=$(opkg list-installed 2>/dev/null | grep -c "kmod-wireguard")
-  kmod_available=$(opkg list 2>/dev/null | grep -c "^kmod-wireguard ")
+  kmod_available=$(opkg list 2>/dev/null | grep -c "^kmod-wireguard")
 fi
 if [ "$kmod_installed" -eq 0 ] && [ "$kmod_available" -gt 0 ]; then
   MISSING_PKGS="$MISSING_PKGS kmod-wireguard"
@@ -81,11 +81,11 @@ fi
 
 # Check for luci-proto-wireguard (required for LuCI interface support)
 if [ "$PKG_MGR" = "apk" ]; then
-  luci_installed=$(apk list --installed 2>/dev/null | grep -c "^luci-proto-wireguard ")
-  luci_available=$(apk list 2>/dev/null | grep -c "^luci-proto-wireguard ")
+  luci_installed=$(apk list --installed 2>/dev/null | grep -c "^luci-proto-wireguard")
+  luci_available=$(apk list 2>/dev/null | grep -c "^luci-proto-wireguard")
 else
   luci_installed=$(opkg list-installed 2>/dev/null | grep -c "luci-proto-wireguard")
-  luci_available=$(opkg list 2>/dev/null | grep -c "^luci-proto-wireguard ")
+  luci_available=$(opkg list 2>/dev/null | grep -c "^luci-proto-wireguard")
 fi
 if [ "$luci_installed" -eq 0 ] && [ "$luci_available" -gt 0 ]; then
   MISSING_PKGS="$MISSING_PKGS luci-proto-wireguard"
@@ -94,9 +94,9 @@ fi
 # Check for optional qrencode
 if ! command -v qrencode >/dev/null 2>&1; then
   if [ "$PKG_MGR" = "apk" ]; then
-    qr_available=$(apk list 2>/dev/null | grep -c "^qrencode ")
+    qr_available=$(apk list 2>/dev/null | grep -c "^qrencode")
   else
-    qr_available=$(opkg list 2>/dev/null | grep -c "^qrencode ")
+    qr_available=$(opkg list 2>/dev/null | grep -c "^qrencode")
   fi
   if [ "$qr_available" -gt 0 ]; then
     OPTIONAL_PKGS="$OPTIONAL_PKGS qrencode"
