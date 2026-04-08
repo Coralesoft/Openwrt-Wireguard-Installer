@@ -178,9 +178,9 @@ find_peer_section() {
   return 1
 }
 
-#
-# FUNCTION: LIST
-#
+####################################################
+# Function: do_list
+####################################################
 do_list() {
   print_info ""
   print_info "WireGuard Peers on interface '$WG_IFACE':"
@@ -217,9 +217,9 @@ $num:$desc"
   echo "$peer_list"
 }
 
-#
-# FUNCTION: SHOW
-#
+####################################################
+# Function: do_show
+####################################################
 do_show() {
   peer_name="$1"
 
@@ -286,9 +286,9 @@ do_show() {
   fi
 }
 
-#
-# FUNCTION: ADD
-#
+####################################################
+# Function: do_add
+####################################################
 do_add() {
   print_info ""
   print_info "Add New WireGuard Peer"
@@ -468,9 +468,9 @@ EOF
   fi
 }
 
-#
-# FUNCTION: REMOVE
-#
+####################################################
+# Function: do_remove
+####################################################
 do_remove() {
   peer_name="$1"
 
@@ -536,9 +536,9 @@ do_remove() {
   fi
 }
 
-#
-# FUNCTION: ENABLE
-#
+####################################################
+# Function: do_enable
+####################################################
 do_enable() {
   peer_name="$1"
 
@@ -570,9 +570,9 @@ do_enable() {
   fi
 }
 
-#
-# FUNCTION: DISABLE
-#
+####################################################
+# Function: do_disable
+####################################################
 do_disable() {
   peer_name="$1"
 
@@ -604,9 +604,9 @@ do_disable() {
   fi
 }
 
-#
-# FUNCTION: TRAFFIC
-#
+####################################################
+# Function: do_traffic
+####################################################
 do_traffic() {
   if ! wg show "$WG_IFACE" >/dev/null 2>&1; then
     print_error "WireGuard interface '$WG_IFACE' is not running"
@@ -634,9 +634,9 @@ do_traffic() {
   done
 }
 
-#
-# FUNCTION: ACTIVE
-#
+####################################################
+# Function: do_active
+####################################################
 do_active() {
   if ! wg show "$WG_IFACE" >/dev/null 2>&1; then
     print_error "WireGuard interface '$WG_IFACE' is not running"
@@ -683,9 +683,115 @@ do_active() {
   fi
 }
 
-#
-# INTERACTIVE: Peer Management Submenu
-#
+####################################################
+# Function: do_rotate_peer
+####################################################
+do_rotate_peer() {
+  peer_name="$1"
+
+  if [ -z "$peer_name" ]; then
+    print_error "Peer name required"
+    return 1
+  fi
+
+  uci_section=$(find_peer_section "$peer_name")
+  if [ -z "$uci_section" ]; then
+    print_error "Peer '$peer_name' not found"
+    return 1
+  fi
+
+  print_warn ""
+  print_warn "This will generate new keys for peer '$peer_name'"
+  print_warn "The peer's device will need to re-import the new config"
+  print_prompt "Are you sure? [y/N]: "
+  read -r confirm
+
+  if [ "${confirm##[Yy]}" != "" ]; then
+    print_info "Cancelled"
+    return 0
+  fi
+
+  # Backup old keys
+  TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+  BACKUP_DIR="$KEYDIR/backup/$TIMESTAMP"
+  mkdir -p "$BACKUP_DIR"
+  for f in "$PEERDIR/${peer_name}-privatekey" "$PEERDIR/${peer_name}-publickey" "$PEERDIR/${peer_name}.conf"; do
+    [ -f "$f" ] && cp "$f" "$BACKUP_DIR/"
+  done
+  print_info "Old keys backed up to: $BACKUP_DIR"
+
+  # Generate new keypair
+  print_info "Generating new keypair..."
+  mkdir -p "$PEERDIR"
+  umask 077
+  NEW_PRIV=$(wg genkey)
+  NEW_PUB=$(printf '%s' "$NEW_PRIV" | wg pubkey)
+
+  printf '%s' "$NEW_PRIV" > "$PEERDIR/${peer_name}-privatekey"
+  printf '%s' "$NEW_PUB" > "$PEERDIR/${peer_name}-publickey"
+
+  # Update UCI with new public key
+  print_info "Updating UCI configuration..."
+  uci set network."$uci_section".public_key="$NEW_PUB"
+  uci commit network
+
+  # Get peer settings to regenerate config
+  PEER_IP=$(uci get network."$uci_section".allowed_ips 2>/dev/null | head -n1)
+
+  # Preserve endpoint and DNS from existing conf if available
+  ENDPOINT=""
+  PEER_DNS=""
+  if [ -f "$PEERDIR/${peer_name}.conf" ]; then
+    ENDPOINT=$(grep "^Endpoint = " "$PEERDIR/${peer_name}.conf" 2>/dev/null | cut -d= -f2 | tr -d ' ')
+    PEER_DNS=$(grep "^DNS = " "$PEERDIR/${peer_name}.conf" 2>/dev/null | cut -d= -f2 | tr -d ' ')
+  fi
+  [ -z "$ENDPOINT" ] && ENDPOINT="your.openwrt.hostname:$WG_PORT"
+  [ -z "$PEER_DNS" ] && PEER_DNS="$DEFAULT_DNS"
+
+  # Write new config
+  cat > "$PEERDIR/${peer_name}.conf" <<EOF
+[Interface]
+PrivateKey = $NEW_PRIV
+Address = $PEER_IP
+DNS = $PEER_DNS
+
+[Peer]
+PublicKey = $SERVER_PUB
+Endpoint = $ENDPOINT
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+EOF
+
+  print_info "New config saved: $PEERDIR/${peer_name}.conf"
+  print_info ""
+
+  # Show QR code if available
+  if [ "$HAS_QR" -eq 1 ]; then
+    print_info "QR Code:"
+    qrencode -t ansiutf8 < "$PEERDIR/${peer_name}.conf"
+    if [ "$HAS_PNG" -eq 1 ]; then
+      qrencode -t png -o "$PEERDIR/${peer_name}.png" < "$PEERDIR/${peer_name}.conf"
+      print_info "QR PNG saved: $PEERDIR/${peer_name}.png"
+    fi
+  fi
+
+  print_info ""
+  print_info "Keys rotated for '$peer_name'"
+  print_warn "Remember to re-import the new config on the peer's device"
+
+  print_prompt "Restart network to apply changes? [y/N]: "
+  read -r restart
+  if [ "${restart##[Yy]}" = "" ]; then
+    /etc/init.d/network restart
+    print_info "Network restarted"
+  else
+    print_warn "Remember to restart the network: /etc/init.d/network restart"
+  fi
+}
+
+####################################################
+# Interactive: Peer management submenu
+####################################################
 interactive_manage_peer() {
   peer_name="$1"
 
@@ -705,10 +811,11 @@ interactive_manage_peer() {
     else
       print_info "2. Disable peer"
     fi
-    print_info "3. Remove peer"
-    print_info "4. Back to main menu"
+    print_info "3. Rotate keys"
+    print_info "4. Remove peer"
+    print_info "5. Back to main menu"
     print_info ""
-    print_prompt "Select option [1-4]: "
+    print_prompt "Select option [1-5]: "
     read -r choice
 
     case "$choice" in
@@ -727,10 +834,15 @@ interactive_manage_peer() {
         read -r dummy
         ;;
       3)
+        do_rotate_peer "$peer_name"
+        print_prompt "Press Enter to continue..."
+        read -r dummy
+        ;;
+      4)
         do_remove "$peer_name"
         return 0
         ;;
-      4)
+      5)
         return 0
         ;;
       *)
@@ -740,17 +852,49 @@ interactive_manage_peer() {
   done
 }
 
-#
-# INTERACTIVE: Peer Selection Submenu
-#
+####################################################
+# Interactive: Peer selection submenu
+####################################################
 interactive_select_peer() {
   clear_screen
-  peer_list=$(do_list)
 
-  if [ -z "$peer_list" ]; then
-    print_warn "No peers configured. Add a peer first."
+  # Build the peer list inline so we can display and capture at the same time
+  print_info ""
+  print_info "WireGuard Peers on interface '$WG_IFACE':"
+  print_info "════════════════════════════════════════"
+
+  peer_list=""
+  num=0
+  found=0
+
+  for section in $(uci show network 2>/dev/null | grep "=wireguard_${WG_IFACE}$" | cut -d. -f2 | cut -d= -f1); do
+    found=1
+    num=$((num+1))
+    desc=$(uci get network."$section".description 2>/dev/null || echo "$section")
+    allowed=$(uci get network."$section".allowed_ips 2>/dev/null | head -n1 || echo "N/A")
+    enabled=$(uci get network."$section".disabled 2>/dev/null || echo "0")
+
+    if [ "$enabled" = "1" ]; then
+      status="[DISABLED]"
+    else
+      status="[ENABLED]"
+    fi
+
+    print_info "  $num. $desc ($allowed) $status"
+    peer_list="$peer_list
+$num:$desc"
+  done
+
+  if [ "$found" -eq 0 ]; then
+    print_warn "  No peers configured. Add a peer first."
     print_prompt "Press Enter to continue..."
     read -r dummy
+    return 1
+  fi
+
+  print_info ""
+
+  if [ -z "$peer_list" ]; then
     return 1
   fi
 
@@ -782,9 +926,9 @@ interactive_select_peer() {
   interactive_manage_peer "$selected_peer"
 }
 
-#
-# INTERACTIVE: Main Menu
-#
+####################################################
+# Interactive: Main menu
+####################################################
 interactive_menu() {
   INTERACTIVE_MODE=1
 
@@ -801,7 +945,7 @@ interactive_menu() {
     print_info "3. Manage existing peer"
     print_info "4. Show traffic statistics"
     print_info "5. Show active connections"
-    print_info "6. Restart WireGuard interface"
+    print_info "6. Restart network"
     print_info "7. Exit"
     print_info ""
     print_prompt "Select option [1-7]: "
@@ -832,9 +976,9 @@ interactive_menu() {
         read -r dummy
         ;;
       6)
-        print_info "Restarting WireGuard interface..."
-        /etc/init.d/network reload
-        print_info "Interface reloaded"
+        print_info "Restarting network..."
+        /etc/init.d/network restart
+        print_info "Network restarted"
         print_prompt "Press Enter to continue..."
         read -r dummy
         ;;
@@ -849,9 +993,9 @@ interactive_menu() {
   done
 }
 
-#
-# MAIN EXECUTION
-#
+####################################################
+# Main execution
+####################################################
 if [ -z "$ACTION" ]; then
   # No action specified - enter interactive mode
   interactive_menu
