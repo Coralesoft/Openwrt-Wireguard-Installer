@@ -3,7 +3,7 @@
 #
 # Description: Safely rotates WireGuard server and/or peer keys with minimal downtime
 #
-# Version: 2026.4.1
+# Version: 2026.4.2
 #
 # Usage: ./wg-key-rotate.sh [--server] [--peer=NAME] [--all-peers] [--backup]
 #
@@ -45,6 +45,7 @@ ROTATE_ALL_PEERS=0
 CREATE_BACKUP=1
 SPECIFIC_PEERS=""
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+umask 077
 
 # Parse arguments
 while [ $# -gt 0 ]; do
@@ -130,6 +131,21 @@ if ! uci show network."$WG_IFACE" >/dev/null 2>&1; then
   exit 1
 fi
 
+####################################################
+# Function: find_peer_section
+####################################################
+find_peer_section() {
+  _peer_name="$1"
+  for _section in $(uci show network 2>/dev/null | grep "=wireguard_${WG_IFACE}$" | cut -d. -f2 | cut -d= -f1); do
+    _desc=$(uci get network."$_section".description 2>/dev/null || echo "")
+    if [ "$_desc" = "$_peer_name" ]; then
+      echo "$_section"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # Create backup directory
 if [ "$CREATE_BACKUP" -eq 1 ]; then
   BACKUP_DIR="$KEYDIR/backup/$TIMESTAMP"
@@ -137,17 +153,20 @@ if [ "$CREATE_BACKUP" -eq 1 ]; then
   print_info "Creating key backups in: $BACKUP_DIR"
 fi
 
-# Function to backup a file
+####################################################
+# Function: backup_file
+####################################################
 backup_file() {
   if [ "$CREATE_BACKUP" -eq 1 ] && [ -f "$1" ]; then
     cp "$1" "$BACKUP_DIR/$(basename "$1")"
   fi
 }
 
-# Function to generate new keypair
+####################################################
+# Function: generate_keypair
+####################################################
 generate_keypair() {
   local prefix="$1"
-  umask 077
   wg genkey | tee "${prefix}-privatekey" | wg pubkey > "${prefix}-publickey"
 }
 
@@ -166,17 +185,15 @@ if [ "$ROTATE_SERVER" -eq 1 ]; then
   
   # Generate new server keypair
   print_info "Generating new server keypair..."
-  cd "$KEYDIR"
   generate_keypair "$KEYDIR/key"
   mv "$KEYDIR/key-privatekey" "$KEYDIR/privatekey"
   mv "$KEYDIR/key-publickey" "$KEYDIR/publickey"
-  
-  NEW_SERVER_PRIV=$(cat "$KEYDIR/privatekey")
+
   NEW_SERVER_PUB=$(cat "$KEYDIR/publickey")
-  
+
   # Update UCI configuration
   print_info "Updating server configuration..."
-  uci set network."$WG_IFACE".private_key="$NEW_SERVER_PRIV"
+  uci set network."$WG_IFACE".private_key="$(cat "$KEYDIR/privatekey")"
   uci commit network
   
   print_info "New server public key: $NEW_SERVER_PUB"
@@ -202,6 +219,15 @@ else
   # Load existing server public key for peer configs
   if [ -f "$KEYDIR/publickey" ]; then
     NEW_SERVER_PUB=$(cat "$KEYDIR/publickey")
+  fi
+fi
+
+# Validate server public key
+if [ "$ROTATE_ALL_PEERS" -eq 1 ] || [ -n "$SPECIFIC_PEERS" ]; then
+  if [ -z "$NEW_SERVER_PUB" ]; then
+    print_error "Server public key not found at $KEYDIR/publickey"
+    print_error "Cannot generate peer configs without it"
+    exit 1
   fi
 fi
 
@@ -236,91 +262,93 @@ if [ -n "$PEERS_TO_ROTATE" ]; then
   for peer_name in $PEERS_TO_ROTATE; do
     print_info ""
     print_info "Processing peer: $peer_name"
-    
+
     # Find the UCI section for this peer
-    uci_section=""
-    for section in $(uci show network | grep "=wireguard_${WG_IFACE}$" | cut -d. -f2 | cut -d= -f1); do
-      desc=$(uci get network."$section".description 2>/dev/null || echo "")
-      if [ "$desc" = "$peer_name" ]; then
-        uci_section="$section"
-        break
-      fi
-    done
-    
+    uci_section=$(find_peer_section "$peer_name")
     if [ -z "$uci_section" ]; then
       print_error "  Peer '$peer_name' not found in UCI config, skipping..."
       continue
     fi
-    
+
     # Backup old keys
     backup_file "$PEERDIR/${peer_name}-privatekey"
     backup_file "$PEERDIR/${peer_name}-publickey"
     backup_file "$PEERDIR/${peer_name}.conf"
-    
+
     # Generate new peer keypair
     print_info "  Generating new keypair..."
-    cd "$PEERDIR"
-    generate_keypair "${peer_name}"
-    
-    NEW_PEER_PRIV=$(cat "${peer_name}-privatekey")
-    NEW_PEER_PUB=$(cat "${peer_name}-publickey")
-    
+    generate_keypair "$PEERDIR/${peer_name}"
+
+    NEW_PEER_PUB=$(cat "$PEERDIR/${peer_name}-publickey")
+
     # Update UCI with new public key
     print_info "  Updating UCI configuration..."
     uci set network."$uci_section".public_key="$NEW_PEER_PUB"
-    
+
     # Get peer's allowed IP from UCI
     PEER_IP=$(uci get network."$uci_section".allowed_ips 2>/dev/null | head -n1)
-    
+
+    # Check for pre-shared key
+    PEER_PSK=$(uci get network."$uci_section".preshared_key 2>/dev/null || echo "")
+
     # Get server endpoint and DNS settings
     WG_PORT=$(uci get network."$WG_IFACE".listen_port 2>/dev/null || echo "51820")
-    
-    # Try to get endpoint from existing conf file
+
+    # Try to get endpoint and settings from existing conf file
     ENDPOINT=""
     OLD_DNS=""
-    if [ -f "${peer_name}.conf" ]; then
-      ENDPOINT=$(grep "^Endpoint = " "${peer_name}.conf" 2>/dev/null | cut -d= -f2 | tr -d ' ')
-      OLD_DNS=$(grep "^DNS = " "${peer_name}.conf" 2>/dev/null | cut -d= -f2 | tr -d ' ')
+    OLD_ALLOWED=""
+    if [ -f "$PEERDIR/${peer_name}.conf" ]; then
+      ENDPOINT=$(grep "^Endpoint = " "$PEERDIR/${peer_name}.conf" 2>/dev/null | cut -d= -f2 | tr -d ' ')
+      OLD_DNS=$(grep "^DNS = " "$PEERDIR/${peer_name}.conf" 2>/dev/null | cut -d= -f2 | tr -d ' ')
+      OLD_ALLOWED=$(grep "^AllowedIPs = " "$PEERDIR/${peer_name}.conf" 2>/dev/null | cut -d= -f2 | tr -d ' ')
     fi
-    
+
     # Use defaults if not found
     if [ -z "$ENDPOINT" ]; then
       print_prompt "  Enter public endpoint for this peer [your.host:$WG_PORT]: "
       read -r endpoint_input
       ENDPOINT="${endpoint_input:-your.host:$WG_PORT}"
     fi
-    
+
     if [ -z "$OLD_DNS" ]; then
       # Extract base IP from server address for DNS default
       SERVER_IP=$(uci get network."$WG_IFACE".addresses 2>/dev/null | head -n1 | cut -d/ -f1)
       OLD_DNS="${SERVER_IP:-192.168.20.1}"
     fi
-    
+
+    OLD_ALLOWED="${OLD_ALLOWED:-0.0.0.0/0}"
+
     # Create new peer config file
     print_info "  Generating new config file..."
-    cat > "${peer_name}.conf" <<EOF
+    cat > "$PEERDIR/${peer_name}.conf" <<EOF
 [Interface]
-PrivateKey = $NEW_PEER_PRIV
+PrivateKey = $(cat "$PEERDIR/${peer_name}-privatekey")
 Address = $PEER_IP
 DNS = $OLD_DNS
 
 [Peer]
 PublicKey = $NEW_SERVER_PUB
 Endpoint = $ENDPOINT
-AllowedIPs = 0.0.0.0/0
+AllowedIPs = $OLD_ALLOWED
 PersistentKeepalive = 25
 EOF
-    
+
+    # Add pre-shared key if one was configured
+    if [ -n "$PEER_PSK" ]; then
+      sed -i "/^PublicKey = /a PresharedKey = $PEER_PSK" "$PEERDIR/${peer_name}.conf"
+    fi
+
     print_info "  New public key: $NEW_PEER_PUB"
     print_info "  Config saved to: $PEERDIR/${peer_name}.conf"
-    
+
     # Generate QR code if available
     if command -v qrencode >/dev/null 2>&1; then
       print_info "  Generating QR code..."
-      qrencode -t ansiutf8 < "${peer_name}.conf"
-      
+      qrencode -t ansiutf8 < "$PEERDIR/${peer_name}.conf"
+
       # Try to generate PNG
-      if qrencode -t png -o "${peer_name}.png" < "${peer_name}.conf" 2>/dev/null; then
+      if qrencode -t png -o "$PEERDIR/${peer_name}.png" < "$PEERDIR/${peer_name}.conf" 2>/dev/null; then
         print_info "  QR PNG saved to: $PEERDIR/${peer_name}.png"
       fi
     fi
@@ -344,22 +372,25 @@ print_prompt "Restart WireGuard interface now? [Y/n]: "
 read -r restart_confirm
 restart_confirm=${restart_confirm:-y}
 
-if [ "${restart_confirm##[Nn]}" != "" ]; then
-  print_info "Restarting WireGuard interface..."
-  /etc/init.d/network reload
-  
-  # Wait a moment and verify interface is up
-  sleep 2
-  if wg show "$WG_IFACE" >/dev/null 2>&1; then
-    print_info "✓ WireGuard interface is running"
-  else
-    print_error "⚠ WireGuard interface failed to start!"
-    print_info "Check logs with: logread | grep -i wireguard"
-  fi
-else
-  print_warn "Interface not restarted. Run manually with:"
-  print_warn "  /etc/init.d/network reload"
-fi
+case "$restart_confirm" in
+  [Nn]*)
+    print_warn "Interface not restarted. Run manually with:"
+    print_warn "  /etc/init.d/network reload"
+    ;;
+  *)
+    print_info "Restarting WireGuard interface..."
+    /etc/init.d/network reload
+
+    # Wait a moment and verify interface is up
+    sleep 2
+    if wg show "$WG_IFACE" >/dev/null 2>&1; then
+      print_info "✓ WireGuard interface is running"
+    else
+      print_error "⚠ WireGuard interface failed to start!"
+      print_info "Check logs with: logread | grep -i wireguard"
+    fi
+    ;;
+esac
 
 #
 # SUMMARY
