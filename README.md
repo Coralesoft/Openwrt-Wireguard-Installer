@@ -17,8 +17,8 @@ A comprehensive set of scripts for automated WireGuard VPN setup, management, an
 
 | Script | Purpose | Version |
 |--------|---------|---------|
-| `wg-openwrt-installer.sh` | Main installer and initial peer setup | 2026.4.1 |
-| `wg-peer-manage.sh` | Interactive peer management | 2026.4.1 |
+| `wg-openwrt-installer.sh` | Main installer and initial peer setup | 2026.4.2 |
+| `wg-peer-manage.sh` | Interactive peer management | 2026.4.2 |
 | `wg-key-rotate.sh` | Key rotation for security | 2026.4.1 |
 | `wg-uninstall.sh` | Clean removal of WireGuard | 2025.11.2 |
 
@@ -498,7 +498,13 @@ For issues, questions, or suggestions:
 
 ## 🎯 Version History
 
-### 2026.4.1 (Current)
+### 2026.4.2 (Current)
+- ✨ Add key rotation support to peer manager
+- ✨ Show peer details on selection in interactive menu
+- ✨ Use network restart instead of interface restart
+- 🐛 Fix trailing space in package detection grep patterns (PR #8)
+
+### 2026.4.1
 - ✨ Support for `apk` package manager (OpenWrt 24.10+ switched from opkg to apk)
 
 ### 2026.1.0

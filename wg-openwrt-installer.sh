@@ -13,7 +13,7 @@
 # Version: 2025.11.1 (Adds /etc/wireguard to OpenWrt backup configuration)
 # Version: 2025.11.2 (Adds automatic package installation option)
 # Version: 2026.1.0 (Fix UCI section names with hyphens, use luci-proto-wireguard)
-# Version: 2026.4.1 (Support apk package manager for OpenWrt 24.10+)
+# Version: 2026.4.2 (Support apk package manager for OpenWrt 24.10+)
 #
 # Copyright (c) 2025-2026 C.Brown CoraleSoft
 #

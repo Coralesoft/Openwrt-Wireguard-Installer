@@ -5,7 +5,7 @@
 #   Manages WireGuard peers: add, remove, list, show status, enable/disable.
 #   Supports both command-line flags and interactive menu mode.
 #
-# Version: 2026.4.1
+# Version: 2026.4.2
 #
 # Copyright (c) 2025-2026 C.Brown CoraleSoft
 #
